@@ -216,8 +216,13 @@ function setupAllSheets() {
   msg += '2. M_DEPT / M_WORKER のサンプルデータを実データに置き換えてください\n';
   msg += '3. Webアプリとしてデプロイしてください';
 
-  SpreadsheetApp.getUi().alert(msg);
   Logger.log(msg);
+  console.log(msg);
+  try {
+    SpreadsheetApp.getUi().alert(msg);
+  } catch (e) {
+    // スタンドアロン実行時はgetUi()不可→ログのみ
+  }
 }
 
 /** シートが無ければ作成して返す */

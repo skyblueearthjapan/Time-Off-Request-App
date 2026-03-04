@@ -2,8 +2,10 @@
 
 /** メニューから呼べる公開ラッパー */
 function rebuildLeaveSummary() {
-  rebuildLeaveSummary_();
-  SpreadsheetApp.getUi().alert('サマリー再構築が完了しました。');
+  var count = rebuildLeaveSummary_();
+  var msg = 'サマリー再構築が完了しました。(' + count + '件)';
+  Logger.log(msg);
+  try { SpreadsheetApp.getUi().alert(msg); } catch (e) {}
 }
 
 /**
