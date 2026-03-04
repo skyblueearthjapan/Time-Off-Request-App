@@ -17,11 +17,10 @@ function syncAllMasters() {
   try {
     var settings = getSettings_();
     var sourceId = normalize_(settings['MASTER_SOURCE_SSID']);
+    // フォールバック: 設定が空なら直接IDを使用
     if (!sourceId) {
-      throw new Error(
-        'Settings に MASTER_SOURCE_SSID が未設定です。\n' +
-        '同期元スプレッドシートのIDを M_SYSTEM_SETTING シートに追加してください。'
-      );
+      sourceId = '1iu5HoaknlW1W1HheeYv0jqcRq-aY0SyEE2seQd2pHkQ';
+      Logger.log('MASTER_SOURCE_SSID未設定のためデフォルトIDを使用: ' + sourceId);
     }
 
     var srcSS = SpreadsheetApp.openById(sourceId);
@@ -33,9 +32,15 @@ function syncAllMasters() {
       try {
         // 同期元シート名をSettingsから取得
         var srcSheetName = normalize_(settings[m.srcKey]);
+        // フォールバック: 設定が空ならデフォルト値を使用
         if (!srcSheetName) {
-          log.push('SKIP ' + m.dst + ': ' + m.srcKey + ' が未設定');
-          continue;
+          if (m.srcKey === 'MASTER_SOURCE_WORKER_SHEET') {
+            srcSheetName = '作業員マスタ';
+            Logger.log(m.srcKey + '未設定のためデフォルト値を使用: ' + srcSheetName);
+          } else {
+            log.push('SKIP ' + m.dst + ': ' + m.srcKey + ' が未設定');
+            continue;
+          }
         }
 
         var srcSh = srcSS.getSheetByName(srcSheetName);
