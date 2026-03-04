@@ -1,5 +1,11 @@
 // ====== 有給取得集計 ======
 
+/** メニューから呼べる公開ラッパー */
+function rebuildLeaveSummary() {
+  rebuildLeaveSummary_();
+  SpreadsheetApp.getUi().alert('サマリー再構築が完了しました。');
+}
+
 /**
  * V_LEAVE_SUMMARYを再構築
  * T_LEAVE_REQUESTの承認済データから年度×作業員で集計

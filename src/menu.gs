@@ -59,20 +59,20 @@ function include_(filename) {
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('休暇届アプリ')
-    .addItem('初期セットアップ（シート自動生成）', 'setupAllSheets_')
+    .addItem('初期セットアップ（シート自動生成）', 'setupAllSheets')
     .addSeparator()
     .addItem('マスタ同期（手動実行）', 'syncAllMasters')
-    .addItem('サマリー再構築', 'rebuildLeaveSummary_')
+    .addItem('サマリー再構築', 'rebuildLeaveSummary')
     .addSeparator()
-    .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails_')
+    .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails')
     .addSeparator()
-    .addItem('全トリガー初期セットアップ', 'setupAllTriggers_')
+    .addItem('全トリガー初期セットアップ', 'setupAllTriggers')
     .addToUi();
 }
 
 // ====== 初期セットアップ（全シート自動生成） ======
 
-function setupAllSheets_() {
+function setupAllSheets() {
   var ss = SpreadsheetApp.getActive();
   var created = [];
   var skipped = [];
@@ -242,7 +242,7 @@ function formatHeaderRow_(sh) {
 
 // ====== トリガー設定 ======
 
-function setupAllTriggers_() {
+function setupAllTriggers() {
   setupSyncTrigger_();
   setupWarnMailTrigger_();
   Logger.log('全トリガーをセットアップしました。');

@@ -1,5 +1,10 @@
 // ====== 有給警告メール ======
 
+/** メニューから呼べる公開ラッパー（日付チェックをスキップして強制送信） */
+function checkAndSendWarnMails() {
+  checkAndSendWarnMails_();
+}
+
 /**
  * 毎日08:00に実行。当日がWARN_MAIL_DATESに該当すれば警告メール送信。
  */
