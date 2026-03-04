@@ -325,8 +325,15 @@ window.addEventListener('DOMContentLoaded', function() {
         selectedDeptId = info.deptId;
         selectedDeptName = info.deptName;
         loadWorkers(info.deptId, info.workerId);
+      } else {
+        // 自動検出できなかった場合も予定一覧を表示
+        loadLeaveTable();
       }
     }).api_getWorkerInfo();
+  }).withFailureHandler(function(err) {
+    console.error('部署一覧取得エラー:', err);
+    document.getElementById('deptSelect').innerHTML = '<option value="">-- 取得エラー --</option>';
+    loadLeaveTable();
   }).api_getDeptList();
 
   // LOOKUPデータロード
@@ -384,6 +391,7 @@ function loadLeaveTable() {
   var wrap = document.getElementById('leaveTableWrap');
   wrap.innerHTML = '<div class="loading">読み込み中...</div>';
   google.script.run.withSuccessHandler(function(items) {
+    if (!items) items = [];
     document.getElementById('leaveCount').textContent = items.length + '件';
     if (!items.length) {
       wrap.innerHTML = '<div class="loading">予定なし</div>';
@@ -404,6 +412,10 @@ function loadLeaveTable() {
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
+  }).withFailureHandler(function(err) {
+    console.error('予定一覧取得エラー:', err);
+    wrap.innerHTML = '<div class="loading">予定なし</div>';
+    document.getElementById('leaveCount').textContent = '0件';
   }).api_getUpcomingLeaves(selectedDeptId, selectedWorkerId);
 }
 
