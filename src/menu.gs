@@ -1,4 +1,4 @@
-// ====== エントリポイント ======
+// ====== エントリポイント（休暇届申請システム） ======
 
 function doGet(e) {
   var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : 'top';
