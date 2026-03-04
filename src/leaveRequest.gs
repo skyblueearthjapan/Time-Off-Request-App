@@ -225,10 +225,22 @@ function api_approveLeaveRequest(reqId, signBase64) {
 
     var now = new Date();
 
+    // ヘッダインデックス検証
+    var requiredCols = ['承認状態', '承認日時', 'サイン画像URL'];
+    for (var rc = 0; rc < requiredCols.length; rc++) {
+      if (idx[requiredCols[rc]] === undefined) {
+        throw new Error('T_LEAVE_REQUEST のヘッダに "' + requiredCols[rc] + '" 列が見つかりません。検出済ヘッダ(' + info.header.length + '列): ' + info.header.join(', '));
+      }
+    }
+
     // 1. サイン画像をDriveに保存
     var signImageUrl = '';
     if (signBase64) {
-      signImageUrl = saveSignImage_(reqId, signBase64);
+      try {
+        signImageUrl = saveSignImage_(reqId, signBase64);
+      } catch (signErr) {
+        console.error('サイン画像保存エラー（続行）: ' + signErr.message);
+      }
     }
 
     // 2. ステータス更新
@@ -242,11 +254,15 @@ function api_approveLeaveRequest(reqId, signBase64) {
     try {
       pdfResult = generateLeavePdf_(reqId);
       if (pdfResult && pdfResult.ok) {
-        sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
-        sh.getRange(targetRow, idx['PDF_FILE_ID'] + 1).setValue(pdfResult.pdfFileId || '');
+        if (idx['PDF_URL'] !== undefined) {
+          sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
+        }
+        if (idx['PDF_FILE_ID'] !== undefined) {
+          sh.getRange(targetRow, idx['PDF_FILE_ID'] + 1).setValue(pdfResult.pdfFileId || '');
+        }
       }
     } catch (pdfErr) {
-      console.error('PDF生成エラー: ' + pdfErr.message);
+      console.error('PDF生成エラー（続行）: ' + pdfErr.message);
     }
 
     // 4. サマリー再構築

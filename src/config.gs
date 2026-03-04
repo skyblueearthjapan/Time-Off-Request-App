@@ -102,9 +102,19 @@ function buildHeaderIndex_(header) {
 function getSheetHeaderIndex_(sheetName, headerRowNo) {
   headerRowNo = headerRowNo || 1;
   var sh = requireSheet_(sheetName);
-  var lastCol = sh.getLastColumn();
-  if (lastCol === 0) return { sh: sh, header: [], idx: {} };
-  var header = sh.getRange(headerRowNo, 1, 1, lastCol).getValues()[0].map(function(h) { return normalize_(h); });
+  var maxCol = sh.getMaxColumns();
+  if (maxCol === 0) return { sh: sh, header: [], idx: {} };
+  // ヘッダ行全体を読み取り、実際の最終列を検出
+  var raw = sh.getRange(headerRowNo, 1, 1, maxCol).getValues()[0];
+  var lastH = 0;
+  for (var c = 0; c < raw.length; c++) {
+    if (String(raw[c] || '').trim() !== '') lastH = c + 1;
+  }
+  if (lastH === 0) return { sh: sh, header: [], idx: {} };
+  var header = [];
+  for (var c = 0; c < lastH; c++) {
+    header.push(normalize_(raw[c]));
+  }
   return { sh: sh, header: header, idx: buildHeaderIndex_(header) };
 }
 
