@@ -1,81 +1,75 @@
 // ====== マスタ読込（部署/作業員/LOOKUP） ======
+// 実データ列: 作業員コード | 氏名 | 部署 | 担当業務 | (Googleアカウント)
+// 部署一覧は作業員マスタの「部署」列からユニーク取得（M_DEPTシート不要）
 
 /**
- * 部署一覧を取得（M_DEPTから、IS_ACTIVE=1のみ、SORT順）
+ * 部署一覧を取得（M_WORKERの「部署」列からユニーク抽出）
  */
 function loadDeptList_() {
-  var sh = requireSheet_(SHEET.DEPT);
-  var values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
-  var H = values[0].map(function(h) { return normalize_(h); });
-  var idx = {
-    deptId: H.indexOf('部署ID'),
-    deptName: H.indexOf('部署名'),
-    active: H.indexOf('IS_ACTIVE'),
-    sort: H.indexOf('SORT'),
-  };
-  if (idx.deptId < 0 || idx.deptName < 0) {
-    throw new Error('M_DEPTのヘッダが想定と違います（部署ID/部署名）。');
-  }
-
-  var out = [];
-  for (var r = 1; r < values.length; r++) {
-    var row = values[r];
-    // IS_ACTIVE フィルタ（列がない場合は全員有効）
-    if (idx.active >= 0) {
-      var active = normalize_(row[idx.active]);
-      if (active !== '' && active !== '1' && active.toLowerCase() !== 'true') continue;
-    }
-    out.push({
-      deptId: normalize_(row[idx.deptId]),
-      deptName: normalize_(row[idx.deptName]),
-      sort: idx.sort >= 0 ? Number(row[idx.sort] || 9999) : r,
-    });
-  }
-  out.sort(function(a, b) { return a.sort - b.sort; });
-  return out;
+  var workersByDept = loadWorkersByDeptMap_();
+  var depts = Array.from(workersByDept.keys()).sort();
+  return depts.map(function(d) {
+    return { deptId: d, deptName: d };
+  });
 }
 
 /**
- * 指定部署の作業員一覧を取得（M_WORKERから）
+ * 作業員マスタを部署ごとにMapで返す（内部用）
  */
-function loadWorkersByDept_(deptId) {
+function loadWorkersByDeptMap_() {
   var sh = requireSheet_(SHEET.WORKER);
   var values = sh.getDataRange().getValues();
-  if (values.length < 2) return [];
+  if (values.length < 2) return new Map();
   var H = values[0].map(function(h) { return normalize_(h); });
   var idx = {
-    workerId: H.indexOf('作業員ID'),
-    workerName: H.indexOf('氏名'),
-    dept: H.indexOf('部署ID'),
-    active: H.indexOf('IS_ACTIVE'),
-    sort: H.indexOf('SORT'),
+    code: H.indexOf('作業員コード'),
+    name: H.indexOf('氏名'),
+    dept: H.indexOf('部署'),
+    active: H.indexOf('在籍フラグ'),
     email: H.findIndex(function(h) { return h.indexOf('Googleアカウント') >= 0; }),
   };
-  if (idx.workerId < 0 || idx.workerName < 0 || idx.dept < 0) {
-    throw new Error('M_WORKERのヘッダが想定と違います（作業員ID/氏名/部署ID）。');
+  // ヘッダが見つからない場合のフォールバック
+  if (idx.code < 0) idx.code = H.indexOf('作業員ID');
+  if (idx.dept < 0) idx.dept = H.indexOf('部署ID');
+
+  if (idx.code < 0 || idx.name < 0 || idx.dept < 0) {
+    throw new Error('作業員マスタのヘッダが想定と違います（作業員コード/氏名/部署）。実際: ' + H.join(', '));
   }
 
-  var out = [];
+  var map = new Map();
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
-    var rowDeptId = normalize_(row[idx.dept]);
-    if (deptId && rowDeptId !== deptId) continue;
+    var dept = normalize_(row[idx.dept]);
+    var code = normalize_(row[idx.code]);
+    var name = normalize_(row[idx.name]);
+    if (!dept || !code || !name) continue;
 
+    // 在籍フラグ列がある場合のみフィルタ
     if (idx.active >= 0) {
       var active = normalize_(row[idx.active]);
-      if (active !== '' && active !== '1' && active.toLowerCase() !== 'true') continue;
+      if (active && active !== '1' && active.toLowerCase() !== 'true') continue;
     }
 
-    out.push({
-      workerId: normalize_(row[idx.workerId]),
-      workerName: normalize_(row[idx.workerName]),
-      deptId: rowDeptId,
-      sort: idx.sort >= 0 ? Number(row[idx.sort] || 9999) : r,
+    if (!map.has(dept)) map.set(dept, []);
+    map.get(dept).push({
+      workerId: code,
+      workerName: name,
+      deptId: dept,
     });
   }
-  out.sort(function(a, b) { return a.sort - b.sort; });
-  return out;
+  // コード順ソート
+  for (var entry of map.entries()) {
+    entry[1].sort(function(a, b) { return a.workerId.localeCompare(b.workerId); });
+  }
+  return map;
+}
+
+/**
+ * 指定部署の作業員一覧を取得
+ */
+function loadWorkersByDept_(deptId) {
+  var map = loadWorkersByDeptMap_();
+  return map.get(deptId) || [];
 }
 
 // ====== ログインユーザーの作業員情報取得 ======
@@ -89,30 +83,29 @@ function api_getWorkerInfo() {
   var values = sh.getDataRange().getValues();
   var H = values[0].map(function(h) { return normalize_(h); });
   var idx = {
-    workerId: H.indexOf('作業員ID'),
-    workerName: H.indexOf('氏名'),
-    dept: H.indexOf('部署ID'),
+    code: H.indexOf('作業員コード'),
+    name: H.indexOf('氏名'),
+    dept: H.indexOf('部署'),
     email: H.findIndex(function(h) { return h.indexOf('Googleアカウント') >= 0; }),
-    active: H.indexOf('IS_ACTIVE'),
+    active: H.indexOf('在籍フラグ'),
   };
+  if (idx.code < 0) idx.code = H.indexOf('作業員ID');
+  if (idx.dept < 0) idx.dept = H.indexOf('部署ID');
   if (idx.email < 0) return null;
 
   for (var r = 1; r < values.length; r++) {
     var row = values[r];
     if (idx.active >= 0) {
       var active = normalize_(row[idx.active]);
-      if (active !== '' && active !== '1' && active.toLowerCase() !== 'true') continue;
+      if (active && active !== '1' && active.toLowerCase() !== 'true') continue;
     }
     if (normalize_(row[idx.email]).toLowerCase() === email) {
-      // 部署名も取得
-      var deptId = normalize_(row[idx.dept]);
-      var depts = loadDeptList_();
-      var deptObj = depts.find(function(d) { return d.deptId === deptId; });
+      var dept = normalize_(row[idx.dept]);
       return {
-        workerId: normalize_(row[idx.workerId]),
-        workerName: normalize_(row[idx.workerName]),
-        deptId: deptId,
-        deptName: deptObj ? deptObj.deptName : deptId,
+        workerId: normalize_(row[idx.code]),
+        workerName: normalize_(row[idx.name]),
+        deptId: dept,
+        deptName: dept,
         email: email,
       };
     }
@@ -133,7 +126,6 @@ function api_getWorkersByDept(deptId) {
 
 /**
  * LOOKUPデータを一括取得（申請モーダル用）
- * 戻り値: { leaveKubun: [...], leaveTypeFull: [...], leaveTypeHalf: [...], specialReasons: [...] }
  */
 function api_getLookupData() {
   return {

@@ -3,8 +3,7 @@ const TZ = 'Asia/Tokyo';
 
 const SHEET = {
   SETTINGS: 'M_SYSTEM_SETTING',
-  DEPT: 'M_DEPT',
-  WORKER: 'M_WORKER',
+  WORKER: '作業員マスタ',
   LOOKUP: 'M_LOOKUP',
   LEAVE_REQUEST: 'T_LEAVE_REQUEST',
   LEAVE_SUMMARY: 'V_LEAVE_SUMMARY',

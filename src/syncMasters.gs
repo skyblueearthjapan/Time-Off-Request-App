@@ -1,15 +1,14 @@
 // ====== マスタ自動転記（元スプレッドシート → DB） ======
 
 const SYNC_MAP = [
-  { src: null, dst: SHEET.DEPT, srcKey: 'MASTER_SOURCE_DEPT_SHEET' },
   { src: null, dst: SHEET.WORKER, srcKey: 'MASTER_SOURCE_WORKER_SHEET' },
 ];
 
 /**
- * 全マスタを元スプレッドシート → DB へ同期（全置換）。
- * Settings: MASTER_SOURCE_SSID = 同期元スプレッドシートID
- *           MASTER_SOURCE_DEPT_SHEET = 部署シート名
- *           MASTER_SOURCE_WORKER_SHEET = 作業員シート名
+ * 作業員マスタを元スプレッドシート → DB へ同期（全置換）。
+ * Settings: MASTER_SOURCE_SSID = 同期元スプレッドシートID（作業日報_全従業員用）
+ *           MASTER_SOURCE_WORKER_SHEET = 同期元の作業員シート名
+ * ※ 部署一覧は作業員マスタの「部署」列からユニーク取得するためM_DEPTは不要
  */
 function syncAllMasters() {
   var lock = LockService.getScriptLock();

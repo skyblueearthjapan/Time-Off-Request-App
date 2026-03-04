@@ -90,9 +90,8 @@ function setupAllSheets() {
       ['MAIL_TO', '', '通知先メール（管理者＋総務、カンマ区切り）'],
       ['PDF_FOLDER_ID', '', 'PDF保存先DriveフォルダID'],
       ['PDF_TEMPLATE_SSID', '', 'PDFテンプレートスプレッドシートID'],
-      ['MASTER_SOURCE_SSID', '', '同期元マスタスプレッドシートID'],
-      ['MASTER_SOURCE_DEPT_SHEET', '', '同期元の部署シート名'],
-      ['MASTER_SOURCE_WORKER_SHEET', '', '同期元の作業員シート名'],
+      ['MASTER_SOURCE_SSID', '1iu5HoaknlW1W1HheeYv0jqcRq-aY0SyEE2seQd2pHkQ', '同期元マスタSS（作業日報_全従業員用）'],
+      ['MASTER_SOURCE_WORKER_SHEET', '作業員マスタ', '同期元の作業員シート名'],
     ];
     settingSh.getRange(1, 1, settingRows.length, 3).setValues(settingRows);
     formatHeaderRow_(settingSh);
@@ -104,39 +103,16 @@ function setupAllSheets() {
     skipped.push('M_SYSTEM_SETTING（既存）');
   }
 
-  // ---------- 2. M_DEPT ----------
-  var deptSh = ensureSheet_(ss, 'M_DEPT');
-  if (deptSh.getLastRow() < 1) {
-    var deptHeader = [['部署ID', '部署名', 'IS_ACTIVE', 'SORT']];
-    deptSh.getRange(1, 1, 1, 4).setValues(deptHeader);
-    // サンプルデータ
-    var deptSample = [
-      ['DEPT01', 'サンプル部署A', 1, 1],
-      ['DEPT02', 'サンプル部署B', 1, 2],
-    ];
-    deptSh.getRange(2, 1, deptSample.length, 4).setValues(deptSample);
-    formatHeaderRow_(deptSh);
-    created.push('M_DEPT');
-  } else {
-    skipped.push('M_DEPT（既存）');
-  }
-
-  // ---------- 3. M_WORKER ----------
-  var workerSh = ensureSheet_(ss, 'M_WORKER');
+  // ---------- 2. 作業員マスタ ----------
+  // 同期元（作業日報_全従業員用）から自動転記するため、ここではヘッダのみ作成
+  var workerSh = ensureSheet_(ss, '作業員マスタ');
   if (workerSh.getLastRow() < 1) {
-    var workerHeader = [['作業員ID', '氏名', '部署ID', 'Googleアカウント', 'IS_ACTIVE', 'SORT']];
-    workerSh.getRange(1, 1, 1, 6).setValues(workerHeader);
-    // サンプル（現在のユーザーで1件）
-    var email = Session.getActiveUser().getEmail() || '';
-    var workerSample = [
-      ['W001', 'サンプル太郎', 'DEPT01', email, 1, 1],
-    ];
-    workerSh.getRange(2, 1, workerSample.length, 6).setValues(workerSample);
+    var workerHeader = [['作業員コード', '氏名', '部署', '担当業務']];
+    workerSh.getRange(1, 1, 1, 4).setValues(workerHeader);
     formatHeaderRow_(workerSh);
-    workerSh.setColumnWidth(4, 250);
-    created.push('M_WORKER');
+    created.push('作業員マスタ');
   } else {
-    skipped.push('M_WORKER（既存）');
+    skipped.push('作業員マスタ（既存）');
   }
 
   // ---------- 4. M_LOOKUP ----------
