@@ -79,28 +79,57 @@ function setupAllSheets() {
 
   // ---------- 1. M_SYSTEM_SETTING ----------
   var settingSh = ensureSheet_(ss, 'M_SYSTEM_SETTING');
-  if (settingSh.getLastRow() < 2) {
-    var settingRows = [
-      ['KEY', 'VALUE', 'MEMO'],
-      ['APP_URL', '', 'WebアプリURL（デプロイ後に設定）'],
-      ['PORTAL_URL', '', '社内ポータルURL（任意）'],
-      ['ADMIN_EMAILS', '', '管理者メール（カンマ区切り）'],
-      ['SOMU_EMAILS', '', '総務メール（カンマ区切り）'],
-      ['ALLOW_ADMIN_PAGE_EMAILS', '', '管理ページ認可リスト（管理者＋総務のメール、カンマ区切り）'],
-      ['MAIL_TO', '', '通知先メール（管理者＋総務、カンマ区切り）'],
-      ['PDF_FOLDER_ID', '', 'PDF保存先DriveフォルダID'],
-      ['PDF_TEMPLATE_SSID', '', 'PDFテンプレートスプレッドシートID'],
-      ['MASTER_SOURCE_SSID', '1iu5HoaknlW1W1HheeYv0jqcRq-aY0SyEE2seQd2pHkQ', '同期元マスタSS（作業日報_全従業員用）'],
-      ['MASTER_SOURCE_WORKER_SHEET', '作業員マスタ', '同期元の作業員シート名'],
-    ];
+  // 必要なKEYとデフォルト値の定義
+  var requiredKeys = [
+    ['APP_URL', '', 'WebアプリURL（デプロイ後に設定）'],
+    ['PORTAL_URL', '', '社内ポータルURL（任意）'],
+    ['ADMIN_EMAILS', '', '管理者メール（カンマ区切り）'],
+    ['SOMU_EMAILS', '', '総務メール（カンマ区切り）'],
+    ['ALLOW_ADMIN_PAGE_EMAILS', '', '管理ページ認可リスト（管理者＋総務のメール、カンマ区切り）'],
+    ['MAIL_TO', '', '通知先メール（管理者＋総務、カンマ区切り）'],
+    ['PDF_FOLDER_ID', '', 'PDF保存先DriveフォルダID'],
+    ['PDF_TEMPLATE_SSID', '', 'PDFテンプレートスプレッドシートID'],
+    ['MASTER_SOURCE_SSID', '1iu5HoaknlW1W1HheeYv0jqcRq-aY0SyEE2seQd2pHkQ', '同期元マスタSS（作業日報_全従業員用）'],
+    ['MASTER_SOURCE_WORKER_SHEET', '作業員マスタ', '同期元の作業員シート名'],
+  ];
+  if (settingSh.getLastRow() < 1) {
+    // 新規: ヘッダ + 全KEY
+    var settingRows = [['KEY', 'VALUE', 'MEMO']].concat(requiredKeys);
     settingSh.getRange(1, 1, settingRows.length, 3).setValues(settingRows);
     formatHeaderRow_(settingSh);
     settingSh.setColumnWidth(1, 250);
     settingSh.setColumnWidth(2, 350);
     settingSh.setColumnWidth(3, 300);
-    created.push('M_SYSTEM_SETTING');
+    created.push('M_SYSTEM_SETTING（新規作成）');
   } else {
-    skipped.push('M_SYSTEM_SETTING（既存）');
+    // 既存: 不足KEYを追加＆デフォルト値があるKEYは空なら上書き
+    var existingData = settingSh.getDataRange().getValues();
+    var existingKeys = {};
+    for (var r = 1; r < existingData.length; r++) {
+      var k = String(existingData[r][0] || '').trim();
+      if (k) existingKeys[k] = { row: r + 1, value: existingData[r][1] };
+    }
+    var addedKeys = [];
+    for (var i = 0; i < requiredKeys.length; i++) {
+      var key = requiredKeys[i][0];
+      var defaultVal = requiredKeys[i][1];
+      var memo = requiredKeys[i][2];
+      if (!existingKeys[key]) {
+        // KEYが存在しない → 追加
+        settingSh.appendRow([key, defaultVal, memo]);
+        addedKeys.push(key);
+      } else if (defaultVal && !existingKeys[key].value) {
+        // デフォルト値があり、現在の値が空 → デフォルト値で上書き
+        settingSh.getRange(existingKeys[key].row, 2).setValue(defaultVal);
+        settingSh.getRange(existingKeys[key].row, 3).setValue(memo);
+        addedKeys.push(key + '(値セット)');
+      }
+    }
+    if (addedKeys.length) {
+      created.push('M_SYSTEM_SETTING（' + addedKeys.join(', ') + '）');
+    } else {
+      skipped.push('M_SYSTEM_SETTING（既存・変更なし）');
+    }
   }
 
   // ---------- 2. 作業員マスタ ----------
