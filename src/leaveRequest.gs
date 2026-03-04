@@ -172,6 +172,10 @@ function api_getUpcomingLeaves(deptId, workerId) {
 
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
+    // 空行スキップ（REQ_IDが空の行は無視）
+    var rowReqId = normalize_(row[idx['REQ_ID']]);
+    if (!rowReqId) continue;
+
     var status = normalize_(row[idx['承認状態']]);
     if (status === STATUS.CANCELED) continue;
 

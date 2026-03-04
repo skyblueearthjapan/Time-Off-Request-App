@@ -27,6 +27,10 @@ function rebuildLeaveSummary_() {
 
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
+      // 空行スキップ（REQ_IDが空なら無視）
+      var reqIdCol = reqIdx['REQ_ID'] !== undefined ? reqIdx['REQ_ID'] : 0;
+      if (!normalize_(row[reqIdCol])) continue;
+
       var status = normalize_(row[reqIdx['承認状態']]);
       if (status !== STATUS.APPROVED) continue;
 
