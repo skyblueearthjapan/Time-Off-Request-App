@@ -56,10 +56,12 @@ function api_submitLeaveRequest(data) {
     var leaveDate = new Date(data.leaveDate);
     var fy = computeFiscalYear_(leaveDate);
 
-    var sh = requireSheet_(SHEET.LEAVE_REQUEST);
-    var lastCol = sh.getLastColumn();
-    if (lastCol === 0) {
-      // ヘッダが無い場合は作成
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+
+    // ヘッダが無い場合は作成
+    if (info.header.length === 0) {
       var headers = [
         'REQ_ID', '年度', '部署ID', '部署名', '作業員ID', '作業員名',
         '休暇区分', '半日区分', '休暇日', '休暇種類',
@@ -67,31 +69,37 @@ function api_submitLeaveRequest(data) {
         '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID'
       ];
       sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-      lastCol = headers.length;
+      SpreadsheetApp.flush();
+      // ヘッダインデックス再取得
+      info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+      idx = info.idx;
     }
 
-    var row = [
-      reqId,
-      fy,
-      data.deptId || '',
-      data.deptName || '',
-      data.workerId || '',
-      data.workerName || '',
-      data.leaveKubun || '',
-      data.halfDayType || '',
-      leaveDate,
-      data.leaveType || '',
-      data.substituteDate ? new Date(data.substituteDate) : '',
-      data.specialReason || '',
-      data.paidDetail || '',
-      data.additionalDetail || '',
-      now,
-      '',
-      STATUS.SUBMITTED,
-      '',
-      '',
-      '',
-    ];
+    // ヘッダ位置ベースで行データを構築（列の順序に依存しない）
+    var row = new Array(info.header.length);
+    for (var c = 0; c < row.length; c++) row[c] = '';
+
+    function setCol(name, value) {
+      if (idx[name] !== undefined) row[idx[name]] = value;
+    }
+
+    setCol('REQ_ID', reqId);
+    setCol('年度', fy);
+    setCol('部署ID', data.deptId || '');
+    setCol('部署名', data.deptName || '');
+    setCol('作業員ID', data.workerId || '');
+    setCol('作業員名', data.workerName || '');
+    setCol('休暇区分', data.leaveKubun || '');
+    setCol('半日区分', data.halfDayType || '');
+    setCol('休暇日', leaveDate);
+    setCol('休暇種類', data.leaveType || '');
+    setCol('振替元出勤日', data.substituteDate ? new Date(data.substituteDate) : '');
+    setCol('特別理由', data.specialReason || '');
+    setCol('有給詳細', data.paidDetail || '');
+    setCol('追加詳細', data.additionalDetail || '');
+    setCol('申請日時', now);
+    setCol('承認状態', STATUS.SUBMITTED);
+    setCol('作成者メール', Session.getActiveUser().getEmail() || '');
 
     sh.appendRow(row);
     SpreadsheetApp.flush();
@@ -113,7 +121,8 @@ function api_getLeaveRequestById(reqId) {
   var lastRow = sh.getLastRow();
   if (lastRow < 2) return null;
 
-  var values = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).getValues();
+  var readCols = Math.max(info.header.length, sh.getLastColumn());
+  var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     if (normalize_(row[idx['REQ_ID']]) === reqId) {
@@ -157,7 +166,8 @@ function api_getUpcomingLeaves(deptId, workerId) {
   var today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  var values = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).getValues();
+  var readCols = Math.max(info.header.length, sh.getLastColumn());
+  var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
   var out = [];
 
   for (var i = 0; i < values.length; i++) {
@@ -212,7 +222,8 @@ function api_approveLeaveRequest(reqId, signBase64) {
     var lastRow = sh.getLastRow();
     if (lastRow < 2) throw new Error('申請データがありません。');
 
-    var values = sh.getRange(2, 1, lastRow - 1, sh.getLastColumn()).getValues();
+    var readCols = Math.max(info.header.length, sh.getLastColumn());
+    var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
     var targetRow = -1;
 
     for (var i = 0; i < values.length; i++) {
@@ -225,11 +236,11 @@ function api_approveLeaveRequest(reqId, signBase64) {
 
     var now = new Date();
 
-    // ヘッダインデックス検証
-    var requiredCols = ['承認状態', '承認日時', 'サイン画像URL'];
+    // ヘッダインデックス検証（エイリアス解決済み）
+    var requiredCols = ['REQ_ID', '承認状態', '承認日時', 'サイン画像URL'];
     for (var rc = 0; rc < requiredCols.length; rc++) {
       if (idx[requiredCols[rc]] === undefined) {
-        throw new Error('T_LEAVE_REQUEST のヘッダに "' + requiredCols[rc] + '" 列が見つかりません。検出済ヘッダ(' + info.header.length + '列): ' + info.header.join(', '));
+        throw new Error('T_LEAVE_REQUEST のヘッダに "' + requiredCols[rc] + '" が見つかりません。ヘッダ: ' + info.header.join(', '));
       }
     }
 

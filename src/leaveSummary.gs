@@ -22,7 +22,8 @@ function rebuildLeaveSummary_() {
   var summaryMap = {}; // key = 年度_作業員ID
 
   if (lastRow >= 2) {
-    var values = reqSh.getRange(2, 1, lastRow - 1, reqSh.getLastColumn()).getValues();
+    var readCols = Math.max(reqInfo.header.length, reqSh.getLastColumn());
+    var values = reqSh.getRange(2, 1, lastRow - 1, readCols).getValues();
 
     for (var i = 0; i < values.length; i++) {
       var row = values[i];

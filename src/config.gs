@@ -53,6 +53,31 @@ const WARN_MAIL_DATES = [
   { month: 2, day: 16 },
 ];
 
+// ====== ヘッダエイリアス（英語ヘッダ → 日本語キー） ======
+// T_LEAVE_REQUESTシートが英語ヘッダの場合に対応
+var HEADER_ALIAS_ = {
+  'FY_START_YEAR': '年度',
+  'STATUS': '承認状態',
+  'APPLIED_AT': '申請日時',
+  'DEPT_ID': '部署ID',
+  'DEPT_NAME': '部署名',
+  'WORKER_ID': '作業員ID',
+  'WORKER_NAME': '作業員名',
+  'LEAVE_DATE': '休暇日',
+  'DAY_TYPE': '休暇区分',
+  'HALF_TYPE': '半日区分',
+  'LEAVE_KIND': '休暇種類',
+  'SUBSTITUTE_FOR_WORK_DATE': '振替元出勤日',
+  'SPECIAL_REASON_REF': '特別理由参照',
+  'SPECIAL_REASON_TEXT': '特別理由',
+  'PAIDLEAVE_DETAIL': '有給詳細',
+  'DETAIL_FREE': '追加詳細',
+  'APPROVED_AT': '承認日時',
+  'SIGN_IMAGE_URL': 'サイン画像URL',
+  'CREATED_BY_EMAIL': '作成者メール',
+  'UPDATED_AT': '更新日時',
+};
+
 // ====== UTIL ======
 function fmtDate_(d, pattern) {
   pattern = pattern || 'yyyy-MM-dd';
@@ -94,7 +119,12 @@ function normalize_(s) {
 function buildHeaderIndex_(header) {
   var idx = {};
   for (var i = 0; i < header.length; i++) {
-    idx[header[i]] = i;
+    var h = header[i];
+    idx[h] = i;
+    // エイリアスも登録（英語→日本語キーで参照可能に）
+    if (HEADER_ALIAS_[h] && idx[HEADER_ALIAS_[h]] === undefined) {
+      idx[HEADER_ALIAS_[h]] = i;
+    }
   }
   return idx;
 }
