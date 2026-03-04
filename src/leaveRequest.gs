@@ -101,9 +101,13 @@ function api_submitLeaveRequest(data) {
     setCol('承認状態', STATUS.SUBMITTED);
     setCol('作成者メール', Session.getActiveUser().getEmail() || '');
 
-    sh.appendRow(row);
+    // appendRowではなくgetRange().setValues()で確実に書込み
+    // （空行が大量にある場合のappendRow位置ずれ防止）
+    var writeRow = sh.getLastRow() + 1;
+    sh.getRange(writeRow, 1, 1, row.length).setValues([row]);
     SpreadsheetApp.flush();
 
+    Logger.log('申請書込み完了: ' + reqId + ' at row ' + writeRow);
     return { ok: true, reqId: reqId };
   } finally {
     lock.releaseLock();
@@ -115,41 +119,54 @@ function api_submitLeaveRequest(data) {
  */
 function api_getLeaveRequestById(reqId) {
   if (!reqId) return null;
-  var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
-  var sh = info.sh;
-  var idx = info.idx;
-  var lastRow = sh.getLastRow();
-  if (lastRow < 2) return null;
 
-  var readCols = Math.max(info.header.length, sh.getLastColumn());
-  var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
-  for (var i = 0; i < values.length; i++) {
-    var row = values[i];
-    if (normalize_(row[idx['REQ_ID']]) === reqId) {
-      return {
-        reqId: normalize_(row[idx['REQ_ID']]),
-        fiscalYear: row[idx['年度']],
-        deptId: normalize_(row[idx['部署ID']]),
-        deptName: normalize_(row[idx['部署名']]),
-        workerId: normalize_(row[idx['作業員ID']]),
-        workerName: normalize_(row[idx['作業員名']]),
-        leaveKubun: normalize_(row[idx['休暇区分']]),
-        halfDayType: normalize_(row[idx['半日区分']]),
-        leaveDate: row[idx['休暇日']],
-        leaveType: normalize_(row[idx['休暇種類']]),
-        substituteDate: row[idx['振替元出勤日']],
-        specialReason: normalize_(row[idx['特別理由']]),
-        paidDetail: normalize_(row[idx['有給詳細']]),
-        additionalDetail: normalize_(row[idx['追加詳細']]),
-        submittedAt: row[idx['申請日時']],
-        approvedAt: row[idx['承認日時']],
-        status: normalize_(row[idx['承認状態']]),
-        signImageUrl: normalize_(row[idx['サイン画像URL']]),
-        pdfUrl: normalize_(row[idx['PDF_URL']]),
-        rowNo: i + 2,
-      };
+  // リトライ付き（書込み直後の読取り遅延対策）
+  for (var attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      SpreadsheetApp.flush();
+      Utilities.sleep(1000);
     }
+
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) continue;
+
+    var readCols = Math.max(info.header.length, sh.getLastColumn());
+    var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
+
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      if (normalize_(row[idx['REQ_ID']]) === reqId) {
+        return {
+          reqId: normalize_(row[idx['REQ_ID']]),
+          fiscalYear: row[idx['年度']],
+          deptId: normalize_(row[idx['部署ID']]),
+          deptName: normalize_(row[idx['部署名']]),
+          workerId: normalize_(row[idx['作業員ID']]),
+          workerName: normalize_(row[idx['作業員名']]),
+          leaveKubun: normalize_(row[idx['休暇区分']]),
+          halfDayType: normalize_(row[idx['半日区分']]),
+          leaveDate: row[idx['休暇日']],
+          leaveType: normalize_(row[idx['休暇種類']]),
+          substituteDate: row[idx['振替元出勤日']],
+          specialReason: normalize_(row[idx['特別理由']]),
+          paidDetail: normalize_(row[idx['有給詳細']]),
+          additionalDetail: normalize_(row[idx['追加詳細']]),
+          submittedAt: row[idx['申請日時']],
+          approvedAt: row[idx['承認日時']],
+          status: normalize_(row[idx['承認状態']]),
+          signImageUrl: normalize_(row[idx['サイン画像URL']]),
+          pdfUrl: normalize_(row[idx['PDF_URL']]),
+          rowNo: i + 2,
+        };
+      }
+    }
+
+    Logger.log('api_getLeaveRequestById: attempt ' + (attempt + 1) + ' not found. reqId=' + reqId + ', lastRow=' + lastRow + ', dataRows=' + values.length);
   }
+
   return null;
 }
 
