@@ -1,0 +1,582 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --bg1:#eaf6ff;--bg2:#f7fffb;--accent:#1f9d55;--accent2:#0ea5e9;
+      --text:#0b2545;--muted:#5c6b7a;--card:#ffffffcc;--line:#d7e7f5;
+      --danger:#ff5a5f;--warn:#ffb020;
+    }
+    *{box-sizing:border-box;}
+    body{
+      margin:0;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(1100px 600px at 18% 0%,var(--bg1),transparent),
+        radial-gradient(1100px 600px at 92% 20%,var(--bg2),transparent),
+        linear-gradient(180deg,#ffffff,#f3fbff);
+    }
+    header{
+      padding:18px 22px;display:flex;align-items:flex-end;justify-content:space-between;
+      border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+      position:sticky;top:0;background:rgba(255,255,255,.55);z-index:10;
+    }
+    .title{font-weight:900;letter-spacing:.06em;font-size:18px;}
+    .sub{opacity:.8;font-size:12px;color:var(--muted);}
+    .wrap{padding:18px 22px;max-width:900px;margin:0 auto;}
+    .card{
+      background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:14px 18px;box-shadow:0 10px 30px rgba(10,40,80,.06);margin-bottom:14px;
+    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    button{
+      padding:10px 16px;border-radius:12px;border:0;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:800;cursor:pointer;
+      box-shadow:0 10px 22px rgba(31,157,85,.20);font-size:14px;
+    }
+    button:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-blue{background:linear-gradient(135deg,var(--accent2),#38bdf8);box-shadow:0 10px 22px rgba(14,165,233,.20);}
+    .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
+    .ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;}
+    .pill{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#fff;display:inline-block;}
+    .danger{border-color:#ffb3b3;background:#fff0f0;color:#7a0b0b;}
+    .warn{border-color:#ffd29e;background:#fff6eb;color:#7a4a0b;}
+    .ok{border-color:#bfe9d0;background:#f0fff6;color:#0b5a2b;}
+    .info{border-color:#b3d4ff;background:#f0f7ff;color:#0b2a5a;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;}
+    th{font-size:12px;color:var(--muted);}
+    a{color:var(--accent2);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    .nav-link{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--text);}
+    .nav-link:hover{background:var(--bg1);text-decoration:none;}
+    .portal-link{
+      font-size:13px;padding:6px 14px;border-radius:8px;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:700;text-decoration:none;
+    }
+    .portal-link:hover{opacity:.9;text-decoration:none;}
+    .loading{text-align:center;padding:30px;color:var(--muted);}
+    select{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-size:14px;font-weight:700;min-width:180px;}
+    .big-btn{
+      display:block;width:100%;padding:18px;font-size:16px;
+      text-align:center;border-radius:14px;margin:10px 0;
+    }
+    /* モーダル */
+    .overlay{
+      display:none;position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,.4);z-index:100;align-items:center;justify-content:center;
+    }
+    .overlay.active{display:flex;}
+    .modal{
+      background:#fff;border-radius:18px;padding:24px;max-width:500px;width:90%;
+      max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);
+    }
+    .modal h3{margin:0 0 16px;font-weight:900;}
+    .step{display:none;}
+    .step.active{display:block;}
+    .form-group{margin-bottom:14px;}
+    .form-group label{display:block;font-weight:700;font-size:13px;margin-bottom:4px;color:var(--muted);}
+    .form-group select,.form-group input,.form-group textarea{
+      width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;
+    }
+    .form-group textarea{min-height:80px;resize:vertical;}
+    .radio-group{display:flex;gap:8px;flex-wrap:wrap;}
+    .radio-group label{
+      padding:10px 16px;border:2px solid var(--line);border-radius:12px;cursor:pointer;
+      font-weight:700;font-size:14px;transition:all .15s;flex:1;text-align:center;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .radio-group input{display:none;}
+    .radio-group input:checked+span{color:var(--accent);}
+    .radio-group label:has(input:checked){border-color:var(--accent);background:#f0fff6;}
+    .step-actions{display:flex;gap:8px;margin-top:16px;justify-content:flex-end;}
+    .confirm-table{width:100%;font-size:13px;}
+    .confirm-table th{text-align:right;padding:6px 10px 6px 0;color:var(--muted);width:35%;}
+    .confirm-table td{padding:6px 0;}
+    @media(max-width:640px){
+      header{flex-direction:column;align-items:flex-start;gap:8px;}
+      .wrap{padding:12px 10px;}
+      .row{flex-direction:column;align-items:stretch;}
+      select{min-width:auto;width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="title">休暇届 申請TOP</div>
+      <div class="sub">休暇届の申請と予定一覧</div>
+    </div>
+    <div class="row" id="navLinks">
+      <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- 部署+作業員選択 -->
+    <div class="card">
+      <div style="font-weight:800;font-size:13px;margin-bottom:8px;color:var(--muted);">申請フォーム</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-weight:700;font-size:14px;">部署：</label>
+        <select id="deptSelect"><option value="">読込中...</option></select>
+        <label style="font-weight:700;font-size:14px;">作業員：</label>
+        <select id="workerSelect"><option value="">-- 部署を先に選択 --</option></select>
+      </div>
+    </div>
+
+    <!-- 申請ボタン -->
+    <button class="big-btn" id="applyBtn" onclick="openModal()" disabled>休暇届を申請する</button>
+
+    <!-- 休暇予定一覧 -->
+    <div class="card">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">
+        休暇予定一覧
+        <span id="leaveCount" style="font-size:13px;font-weight:700;color:var(--accent2);margin-left:8px;"></span>
+      </div>
+      <div id="leaveTableWrap">
+        <div class="loading">読み込み中...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 申請モーダル -->
+  <div class="overlay" id="modalOverlay">
+    <div class="modal">
+      <h3 id="modalTitle">休暇届 申請</h3>
+
+      <!-- Step1: 休暇区分 -->
+      <div class="step active" data-step="1">
+        <div class="form-group">
+          <label>休暇区分を選択してください</label>
+          <div class="radio-group">
+            <label><input type="radio" name="leaveKubun" value="全日休"><span>全日休</span></label>
+            <label><input type="radio" name="leaveKubun" value="半日休"><span>半日休</span></label>
+          </div>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="closeModal()">キャンセル</button>
+          <button class="btn-sm" onclick="nextStep(2)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step2: 休暇日 -->
+      <div class="step" data-step="2">
+        <div class="form-group">
+          <label>休暇日を選択してください</label>
+          <input type="date" id="leaveDate">
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(1)">戻る</button>
+          <button class="btn-sm" onclick="nextStep(3)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step3: 半日区分（半日の場合のみ） -->
+      <div class="step" data-step="3">
+        <div class="form-group">
+          <label>午前・午後を選択してください</label>
+          <div class="radio-group">
+            <label><input type="radio" name="halfDayType" value="午前"><span>午前</span></label>
+            <label><input type="radio" name="halfDayType" value="午後"><span>午後</span></label>
+          </div>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(2)">戻る</button>
+          <button class="btn-sm" onclick="nextStep(4)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step4: 休暇種類 -->
+      <div class="step" data-step="4">
+        <div class="form-group">
+          <label>休暇種類を選択してください</label>
+          <div class="radio-group" id="leaveTypeGroup"></div>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStepFromType()">戻る</button>
+          <button class="btn-sm" onclick="nextStepFromType()">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step5: 振替元出勤日（振替休暇の場合） -->
+      <div class="step" data-step="5">
+        <div class="form-group">
+          <label>振替元の出勤日を入力してください</label>
+          <input type="date" id="substituteDate">
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
+          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step6: 特別休暇理由 -->
+      <div class="step" data-step="6">
+        <div class="form-group">
+          <label>特別休暇の理由</label>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+            参考例：結婚休暇、忌引休暇、出産休暇、生理休暇、裁判員休暇 等
+          </div>
+          <textarea id="specialReason" placeholder="理由を入力してください"></textarea>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
+          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step7: 有給詳細 -->
+      <div class="step" data-step="7">
+        <div class="form-group">
+          <label>有給詳細（任意）</label>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+            病欠の場合は詳しく記載してください
+          </div>
+          <textarea id="paidDetail" placeholder="詳細を入力（任意）"></textarea>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
+          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step8: 追加詳細 -->
+      <div class="step" data-step="8">
+        <div class="form-group">
+          <label>詳細を追加しますか？</label>
+          <textarea id="additionalDetail" placeholder="追加の詳細情報（任意・スキップ可）"></textarea>
+        </div>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStepFromAdditional()">戻る</button>
+          <button class="btn-sm" onclick="nextStep(9)">確認へ</button>
+        </div>
+      </div>
+
+      <!-- Step9: 確認 -->
+      <div class="step" data-step="9">
+        <table class="confirm-table">
+          <tr><th>部署</th><td id="cfmDept"></td></tr>
+          <tr><th>作業員</th><td id="cfmWorker"></td></tr>
+          <tr><th>休暇区分</th><td id="cfmKubun"></td></tr>
+          <tr><th>半日区分</th><td id="cfmHalfDay"></td></tr>
+          <tr><th>休暇日</th><td id="cfmDate"></td></tr>
+          <tr><th>休暇種類</th><td id="cfmType"></td></tr>
+          <tr><th>振替元出勤日</th><td id="cfmSubDate"></td></tr>
+          <tr><th>特別理由</th><td id="cfmSpecial"></td></tr>
+          <tr><th>有給詳細</th><td id="cfmPaid"></td></tr>
+          <tr><th>追加詳細</th><td id="cfmAdditional"></td></tr>
+        </table>
+        <div class="step-actions">
+          <button class="ghost btn-sm" onclick="prevStep(8)">戻る</button>
+          <button class="btn-sm" id="submitBtn" onclick="submitRequest()">申請する</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+var APP_URL = '<?= APP_URL ?>';
+var PORTAL_URL = '<?= PORTAL_URL ?>';
+var selectedDeptId = '';
+var selectedDeptName = '';
+var selectedWorkerId = '';
+var selectedWorkerName = '';
+var lookupData = null;
+var currentStep = 1;
+
+// ====== 初期化 ======
+window.addEventListener('DOMContentLoaded', function() {
+  if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
+
+  // 管理ページリンク表示判定
+  google.script.run.withSuccessHandler(function(canAccess) {
+    if (canAccess) {
+      var link = document.createElement('a');
+      link.href = APP_URL + '?page=admin';
+      link.target = '_top';
+      link.className = 'nav-link';
+      link.textContent = '管理ページ';
+      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
+    }
+  }).api_canAccessAdmin();
+
+  // 部署一覧ロード
+  google.script.run.withSuccessHandler(function(depts) {
+    var sel = document.getElementById('deptSelect');
+    sel.innerHTML = '<option value="">-- 部署を選択 --</option>';
+    depts.forEach(function(d) {
+      var opt = document.createElement('option');
+      opt.value = d.deptId;
+      opt.textContent = d.deptName;
+      opt.dataset.name = d.deptName;
+      sel.appendChild(opt);
+    });
+
+    // ログインユーザーの部署を自動選択
+    google.script.run.withSuccessHandler(function(info) {
+      if (info) {
+        sel.value = info.deptId;
+        selectedDeptId = info.deptId;
+        selectedDeptName = info.deptName;
+        loadWorkers(info.deptId, info.workerId);
+      }
+    }).api_getWorkerInfo();
+  }).api_getDeptList();
+
+  // LOOKUPデータロード
+  google.script.run.withSuccessHandler(function(data) {
+    lookupData = data;
+  }).api_getLookupData();
+});
+
+// ====== 部署選択 ======
+document.getElementById('deptSelect').addEventListener('change', function() {
+  selectedDeptId = this.value;
+  selectedDeptName = this.options[this.selectedIndex].dataset.name || '';
+  if (selectedDeptId) {
+    loadWorkers(selectedDeptId);
+  } else {
+    document.getElementById('workerSelect').innerHTML = '<option value="">-- 部署を先に選択 --</option>';
+    document.getElementById('applyBtn').disabled = true;
+  }
+  loadLeaveTable();
+});
+
+function loadWorkers(deptId, autoSelectId) {
+  var sel = document.getElementById('workerSelect');
+  sel.innerHTML = '<option value="">読込中...</option>';
+  google.script.run.withSuccessHandler(function(workers) {
+    sel.innerHTML = '<option value="">-- 作業員を選択 --</option>';
+    workers.forEach(function(w) {
+      var opt = document.createElement('option');
+      opt.value = w.workerId;
+      opt.textContent = w.workerId + ' ' + w.workerName;
+      opt.dataset.name = w.workerName;
+      sel.appendChild(opt);
+    });
+    if (autoSelectId) {
+      sel.value = autoSelectId;
+      selectedWorkerId = autoSelectId;
+      var selOpt = sel.options[sel.selectedIndex];
+      selectedWorkerName = selOpt ? selOpt.dataset.name || '' : '';
+      document.getElementById('applyBtn').disabled = false;
+    }
+    loadLeaveTable();
+  }).api_getWorkersByDept(deptId);
+}
+
+// ====== 作業員選択 ======
+document.getElementById('workerSelect').addEventListener('change', function() {
+  selectedWorkerId = this.value;
+  selectedWorkerName = this.options[this.selectedIndex].dataset.name || '';
+  document.getElementById('applyBtn').disabled = !selectedWorkerId;
+  loadLeaveTable();
+});
+
+// ====== 休暇予定一覧 ======
+function loadLeaveTable() {
+  var wrap = document.getElementById('leaveTableWrap');
+  wrap.innerHTML = '<div class="loading">読み込み中...</div>';
+  google.script.run.withSuccessHandler(function(items) {
+    document.getElementById('leaveCount').textContent = items.length + '件';
+    if (!items.length) {
+      wrap.innerHTML = '<div class="loading">予定なし</div>';
+      return;
+    }
+    var html = '<table><thead><tr><th>日付</th><th>部署</th><th>氏名</th><th>区分</th><th>種類</th><th>状態</th><th></th></tr></thead><tbody>';
+    items.forEach(function(it) {
+      var statusClass = it.status === '承認済' ? 'ok' : 'info';
+      html += '<tr>'
+        + '<td>' + it.leaveDate + '</td>'
+        + '<td>' + it.deptName + '</td>'
+        + '<td>' + it.workerName + '</td>'
+        + '<td>' + it.leaveKubun + (it.halfDayType ? '(' + it.halfDayType + ')' : '') + '</td>'
+        + '<td>' + it.leaveType + '</td>'
+        + '<td><span class="pill ' + statusClass + '">' + it.status + '</span></td>'
+        + '<td>' + (it.status === '申請中' ? '<a href="' + APP_URL + '?page=preview&reqId=' + it.reqId + '" target="_top" class="btn-sm btn-blue" style="color:#fff;text-decoration:none;padding:4px 10px;border-radius:8px;">承認</a>' : '') + '</td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+    wrap.innerHTML = html;
+  }).api_getUpcomingLeaves(selectedDeptId, selectedWorkerId);
+}
+
+// ====== モーダル制御 ======
+function openModal() {
+  if (!selectedWorkerId) { alert('作業員を選択してください'); return; }
+  resetModal();
+  document.getElementById('modalOverlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+}
+
+function resetModal() {
+  currentStep = 1;
+  document.querySelectorAll('.step').forEach(function(s) { s.classList.remove('active'); });
+  document.querySelector('.step[data-step="1"]').classList.add('active');
+  document.querySelectorAll('input[type="radio"]').forEach(function(r) { r.checked = false; });
+  document.getElementById('leaveDate').value = '';
+  document.getElementById('substituteDate').value = '';
+  document.getElementById('specialReason').value = '';
+  document.getElementById('paidDetail').value = '';
+  document.getElementById('additionalDetail').value = '';
+}
+
+function showStep(n) {
+  document.querySelectorAll('.step').forEach(function(s) { s.classList.remove('active'); });
+  var target = document.querySelector('.step[data-step="' + n + '"]');
+  if (target) target.classList.add('active');
+  currentStep = n;
+}
+
+function nextStep(n) {
+  // バリデーション
+  if (currentStep === 1) {
+    var kubun = document.querySelector('input[name="leaveKubun"]:checked');
+    if (!kubun) { alert('休暇区分を選択してください'); return; }
+  }
+  if (currentStep === 2) {
+    if (!document.getElementById('leaveDate').value) { alert('休暇日を選択してください'); return; }
+    var kubunVal = document.querySelector('input[name="leaveKubun"]:checked').value;
+    if (kubunVal === '全日休') {
+      // 半日区分スキップ → Step4へ
+      buildLeaveTypeOptions(kubunVal);
+      showStep(4);
+      return;
+    }
+  }
+  if (currentStep === 3) {
+    var halfDay = document.querySelector('input[name="halfDayType"]:checked');
+    if (!halfDay) { alert('午前・午後を選択してください'); return; }
+    var kubunVal2 = document.querySelector('input[name="leaveKubun"]:checked').value;
+    buildLeaveTypeOptions(kubunVal2);
+  }
+  if (currentStep === 9) return; // 確認画面の先はない
+
+  // Step9: 確認画面を構築
+  if (n === 9) {
+    buildConfirmation();
+  }
+
+  showStep(n);
+}
+
+function prevStep(n) {
+  showStep(n);
+}
+
+function prevStepFromType() {
+  var kubun = document.querySelector('input[name="leaveKubun"]:checked').value;
+  if (kubun === '全日休') {
+    showStep(2);
+  } else {
+    showStep(3);
+  }
+}
+
+function nextStepFromType() {
+  var type = document.querySelector('input[name="leaveType"]:checked');
+  if (!type) { alert('休暇種類を選択してください'); return; }
+  var typeVal = type.value;
+  if (typeVal === '振替休暇') { showStep(5); }
+  else if (typeVal === '特別休暇') { showStep(6); }
+  else if (typeVal === '有給消化（私用）') { showStep(7); }
+  else { showStep(8); }
+}
+
+function prevStepFromAdditional() {
+  var type = document.querySelector('input[name="leaveType"]:checked');
+  if (!type) { showStep(4); return; }
+  var typeVal = type.value;
+  if (typeVal === '振替休暇') { showStep(5); }
+  else if (typeVal === '特別休暇') { showStep(6); }
+  else if (typeVal === '有給消化（私用）') { showStep(7); }
+  else { showStep(4); }
+}
+
+function buildLeaveTypeOptions(kubun) {
+  var group = document.getElementById('leaveTypeGroup');
+  group.innerHTML = '';
+  var types = kubun === '全日休'
+    ? ['有給消化（私用）', '振替休暇', '特別休暇']
+    : ['有給消化（私用）', '特別休暇'];
+
+  types.forEach(function(t) {
+    var lbl = document.createElement('label');
+    lbl.innerHTML = '<input type="radio" name="leaveType" value="' + t + '"><span>' + t + '</span>';
+    group.appendChild(lbl);
+  });
+}
+
+function buildConfirmation() {
+  var kubun = document.querySelector('input[name="leaveKubun"]:checked');
+  var halfDay = document.querySelector('input[name="halfDayType"]:checked');
+  var leaveType = document.querySelector('input[name="leaveType"]:checked');
+
+  document.getElementById('cfmDept').textContent = selectedDeptName;
+  document.getElementById('cfmWorker').textContent = selectedWorkerId + ' ' + selectedWorkerName;
+  document.getElementById('cfmKubun').textContent = kubun ? kubun.value : '';
+  document.getElementById('cfmHalfDay').textContent = halfDay ? halfDay.value : '-';
+  document.getElementById('cfmDate').textContent = document.getElementById('leaveDate').value;
+  document.getElementById('cfmType').textContent = leaveType ? leaveType.value : '';
+  document.getElementById('cfmSubDate').textContent = document.getElementById('substituteDate').value || '-';
+  document.getElementById('cfmSpecial').textContent = document.getElementById('specialReason').value || '-';
+  document.getElementById('cfmPaid').textContent = document.getElementById('paidDetail').value || '-';
+  document.getElementById('cfmAdditional').textContent = document.getElementById('additionalDetail').value || '-';
+}
+
+function submitRequest() {
+  var btn = document.getElementById('submitBtn');
+  btn.disabled = true;
+  btn.textContent = '送信中...';
+
+  var kubun = document.querySelector('input[name="leaveKubun"]:checked');
+  var halfDay = document.querySelector('input[name="halfDayType"]:checked');
+  var leaveType = document.querySelector('input[name="leaveType"]:checked');
+
+  var data = {
+    deptId: selectedDeptId,
+    deptName: selectedDeptName,
+    workerId: selectedWorkerId,
+    workerName: selectedWorkerName,
+    leaveKubun: kubun ? kubun.value : '',
+    halfDayType: halfDay ? halfDay.value : '',
+    leaveDate: document.getElementById('leaveDate').value,
+    leaveType: leaveType ? leaveType.value : '',
+    substituteDate: document.getElementById('substituteDate').value,
+    specialReason: document.getElementById('specialReason').value,
+    paidDetail: document.getElementById('paidDetail').value,
+    additionalDetail: document.getElementById('additionalDetail').value,
+  };
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.ok) {
+        closeModal();
+        alert('申請が完了しました。\nREQ_ID: ' + result.reqId + '\n\nプレビュー画面で上長の承認を受けてください。');
+        // プレビューページへ遷移
+        window.top.location.href = APP_URL + '?page=preview&reqId=' + result.reqId;
+      } else {
+        alert('申請に失敗しました。');
+        btn.disabled = false;
+        btn.textContent = '申請する';
+      }
+    })
+    .withFailureHandler(function(err) {
+      alert('エラー: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = '申請する';
+    })
+    .api_submitLeaveRequest(data);
+}
+</script>
+</body>
+</html>

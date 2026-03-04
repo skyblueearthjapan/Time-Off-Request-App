@@ -1,0 +1,191 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg1:#eaf6ff;--bg2:#f7fffb;--accent:#1f9d55;--accent2:#0ea5e9;--text:#0b2545;--muted:#5c6b7a;--card:#ffffffcc;--line:#d7e7f5;--danger:#ff5a5f;--warn:#ffb020;}
+    *{box-sizing:border-box;}
+    body{
+      margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      color:var(--text);
+      background:radial-gradient(1100px 600px at 18% 0%,var(--bg1),transparent),
+        radial-gradient(1100px 600px at 92% 20%,var(--bg2),transparent),
+        linear-gradient(180deg,#ffffff,#f3fbff);
+      display:flex;flex-direction:column;min-height:100vh;
+    }
+    header{
+      padding:14px 22px;display:flex;align-items:center;justify-content:space-between;
+      border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+      background:rgba(255,255,255,.55);
+    }
+    .title{font-weight:900;letter-spacing:.06em;font-size:16px;}
+    .wrap{flex:1;display:flex;align-items:center;justify-content:center;padding:20px;}
+    /* 紙様式 */
+    .paper{
+      background:#fff;border:2px solid #333;padding:40px 36px;max-width:700px;width:100%;
+      box-shadow:0 10px 40px rgba(0,0,0,.08);position:relative;
+    }
+    .paper-title{
+      text-align:center;font-size:24px;font-weight:900;letter-spacing:.2em;
+      border-bottom:3px double #333;padding-bottom:12px;margin-bottom:20px;
+    }
+    .paper-date{text-align:right;font-size:13px;margin-bottom:16px;}
+    .paper-table{width:100%;border-collapse:collapse;margin-bottom:16px;}
+    .paper-table th,.paper-table td{
+      border:1px solid #333;padding:10px 12px;font-size:14px;
+    }
+    .paper-table th{background:#f5f5f5;font-weight:700;text-align:left;width:30%;}
+    .stamp-area{
+      position:absolute;top:36px;right:36px;
+      width:80px;height:80px;border:2px solid #cc0000;border-radius:50%;
+      display:flex;align-items:center;justify-content:center;
+      color:#cc0000;font-size:11px;font-weight:700;text-align:center;
+    }
+    .stamp-area.approved{
+      background:rgba(204,0,0,.08);
+    }
+    .actions{
+      text-align:center;padding:20px;display:flex;gap:12px;justify-content:center;
+    }
+    button{
+      padding:12px 24px;border-radius:12px;border:0;font-weight:800;cursor:pointer;font-size:15px;
+    }
+    .btn-approve{
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;box-shadow:0 10px 22px rgba(31,157,85,.20);
+    }
+    .btn-back{
+      background:#fff;color:var(--text);border:1px solid var(--line);
+    }
+    .loading{text-align:center;padding:60px;color:var(--muted);font-size:16px;}
+    @media(max-width:640px){
+      .paper{padding:20px 16px;}
+      .paper-title{font-size:18px;letter-spacing:.1em;}
+      .stamp-area{width:60px;height:60px;top:20px;right:16px;font-size:9px;}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">休暇届 プレビュー</div>
+  </header>
+
+  <div class="wrap" id="contentWrap">
+    <div class="loading" id="loadingMsg">読み込み中...</div>
+  </div>
+
+  <div class="actions" id="actionBar" style="display:none;">
+    <button class="btn-back" id="backBtn">戻る</button>
+    <button class="btn-approve" id="approveBtn">承認する（サイン画面へ）</button>
+  </div>
+
+<script>
+var REQ_ID = '<?= REQ_ID ?>';
+var APP_URL = '<?= APP_URL ?>';
+var reqData = null;
+
+window.addEventListener('DOMContentLoaded', function() {
+  if (!REQ_ID) {
+    document.getElementById('loadingMsg').textContent = 'REQ_IDが指定されていません。';
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(function(data) {
+      if (!data) {
+        document.getElementById('loadingMsg').textContent = '申請データが見つかりません。';
+        return;
+      }
+      reqData = data;
+      renderPreview(data);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingMsg').textContent = 'エラー: ' + err.message;
+    })
+    .api_getLeaveRequestById(REQ_ID);
+});
+
+function renderPreview(d) {
+  var leaveDate = '';
+  if (d.leaveDate) {
+    var dt = new Date(d.leaveDate);
+    leaveDate = dt.getFullYear() + '年' + (dt.getMonth()+1) + '月' + dt.getDate() + '日';
+  }
+  var submittedDate = '';
+  if (d.submittedAt) {
+    var sd = new Date(d.submittedAt);
+    submittedDate = sd.getFullYear() + '年' + (sd.getMonth()+1) + '月' + sd.getDate() + '日';
+  }
+
+  // 令和変換
+  var reiwaYear = '';
+  if (d.leaveDate) {
+    var yr = new Date(d.leaveDate).getFullYear();
+    reiwaYear = '令和' + (yr - 2018) + '年';
+  }
+
+  var kubunDisplay = d.leaveKubun;
+  if (d.halfDayType) kubunDisplay += '（' + d.halfDayType + '）';
+
+  var reasonDetail = '';
+  if (d.leaveType === '特別休暇' && d.specialReason) reasonDetail = d.specialReason;
+  if (d.leaveType === '有給消化（私用）' && d.paidDetail) reasonDetail = d.paidDetail;
+  if (d.additionalDetail) reasonDetail += (reasonDetail ? '\n' : '') + d.additionalDetail;
+
+  var substituteDisplay = '';
+  if (d.leaveType === '振替休暇' && d.substituteDate) {
+    var subDt = new Date(d.substituteDate);
+    substituteDisplay = subDt.getFullYear() + '年' + (subDt.getMonth()+1) + '月' + subDt.getDate() + '日';
+  }
+
+  var stampHtml = '';
+  if (d.status === '承認済') {
+    stampHtml = '<div class="stamp-area approved">承認済</div>';
+  } else {
+    stampHtml = '<div class="stamp-area">承認印</div>';
+  }
+
+  var html = '<div class="paper">'
+    + stampHtml
+    + '<div class="paper-title">休 暇 届</div>'
+    + '<div class="paper-date">申請日：' + submittedDate + '</div>'
+    + '<table class="paper-table">'
+    + '<tr><th>部署</th><td>' + esc(d.deptName) + '</td></tr>'
+    + '<tr><th>氏名</th><td>' + esc(d.workerName) + '</td></tr>'
+    + '<tr><th>休暇区分</th><td>' + esc(kubunDisplay) + '</td></tr>'
+    + '<tr><th>休暇日</th><td>' + esc(leaveDate) + (reiwaYear ? '（' + reiwaYear + '）' : '') + '</td></tr>'
+    + '<tr><th>休暇種類</th><td>' + esc(d.leaveType) + '</td></tr>'
+    + (substituteDisplay ? '<tr><th>振替元出勤日</th><td>' + esc(substituteDisplay) + '</td></tr>' : '')
+    + (reasonDetail ? '<tr><th>理由・詳細</th><td style="white-space:pre-wrap;">' + esc(reasonDetail) + '</td></tr>' : '')
+    + '</table>'
+    + '<div style="text-align:right;margin-top:30px;font-size:13px;color:#666;">REQ_ID: ' + esc(d.reqId) + '</div>'
+    + '</div>';
+
+  document.getElementById('contentWrap').innerHTML = html;
+  document.getElementById('actionBar').style.display = '';
+
+  // 承認済の場合は承認ボタンを非表示
+  if (d.status === '承認済') {
+    document.getElementById('approveBtn').style.display = 'none';
+  }
+}
+
+document.getElementById('backBtn').addEventListener('click', function() {
+  window.top.location.href = APP_URL + '?page=top';
+});
+
+document.getElementById('approveBtn').addEventListener('click', function() {
+  window.top.location.href = APP_URL + '?page=sign&reqId=' + REQ_ID;
+});
+
+function esc(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>
