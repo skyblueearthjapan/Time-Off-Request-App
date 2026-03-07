@@ -5,9 +5,10 @@
  * 実行前に REQ_ID を実在のものに書き換えてください
  */
 function test_generatePdf() {
-  var reqId = 'LV-20260310-001'; // ← 実在のREQ_IDに変更
+  var reqId = 'LV-20260310-001';  // ← 実在のREQ_IDに変更
+  var approverEmail = 'imaizumi@lineworks-local.info'; // ← 承認者メール
   try {
-    var result = generateLeavePdf_(reqId);
+    var result = generateLeavePdf_(reqId, approverEmail);
     console.log('PDF生成成功: ' + JSON.stringify(result));
     Logger.log('PDF URL: ' + result.pdfUrl);
   } catch (e) {
@@ -75,7 +76,7 @@ var PDF_COLORS_ = {
 /**
  * 休暇届PDF生成（GASでシートを動的構築）
  */
-function generateLeavePdf_(reqId) {
+function generateLeavePdf_(reqId, approverEmail) {
   var reqData = api_getLeaveRequestById(reqId);
   if (!reqData) throw new Error('申請が見つかりません: ' + reqId);
 
@@ -94,7 +95,7 @@ function generateLeavePdf_(reqId) {
     sheet.setName('休暇届');
 
     // シート構築＋データ書込み
-    buildLeavePdfSheet_(sheet, reqData);
+    buildLeavePdfSheet_(sheet, reqData, approverEmail);
     SpreadsheetApp.flush();
 
     // 保存先フォルダ
@@ -134,7 +135,7 @@ function generateLeavePdf_(reqId) {
 /**
  * 休暇届シートをゼロから構築しデータを書き込む
  */
-function buildLeavePdfSheet_(sheet, data) {
+function buildLeavePdfSheet_(sheet, data, approverEmail) {
   var C = PDF_COLORS_;
   var DOWS = ['日','月','火','水','木','金','土'];
 
@@ -402,9 +403,9 @@ function buildLeavePdfSheet_(sheet, data) {
   // 1. 電子印（StampMapから承認者のメールで検索）
   var approverStampInserted = false;
   try {
-    var approverEmail = Session.getActiveUser().getEmail();
-    if (approverEmail) {
-      var stampFileId = getStampFileId_(approverEmail);
+    var stampEmail = approverEmail || Session.getActiveUser().getEmail() || '';
+    if (stampEmail) {
+      var stampFileId = getStampFileId_(stampEmail);
       if (stampFileId) {
         var stampBlob = DriveApp.getFileById(stampFileId).getBlob();
         var stampImg = sheet.insertImage(stampBlob, 7, 24); // G24

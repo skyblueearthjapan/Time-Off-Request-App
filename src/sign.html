@@ -29,6 +29,24 @@
     }
     .sign-card h2{margin:0 0 4px;font-weight:900;}
     .sign-card .sub{color:var(--muted);font-size:13px;margin-bottom:16px;}
+
+    /* 承認者選択 */
+    .approver-section{margin-bottom:18px;text-align:left;}
+    .approver-section label{font-weight:700;font-size:13px;display:block;margin-bottom:6px;}
+    .approver-select{
+      width:100%;padding:10px 14px;border-radius:10px;border:1px solid var(--line);
+      font-size:14px;background:#fff;color:var(--text);
+    }
+    .stamp-badge{
+      display:inline-block;margin-top:6px;padding:3px 10px;border-radius:8px;
+      font-size:12px;font-weight:700;
+    }
+    .stamp-badge.has-stamp{background:#e6ffed;color:#1f9d55;}
+    .stamp-badge.no-stamp{background:#fff5f5;color:#ff5a5f;}
+
+    /* サインエリア */
+    .sign-area{margin-top:12px;}
+    .sign-area-label{font-size:12px;color:var(--muted);margin-bottom:6px;}
     canvas{
       border:2px solid var(--line);border-radius:12px;background:#fff;
       cursor:crosshair;touch-action:none;display:block;margin:0 auto;
@@ -52,18 +70,34 @@
 </head>
 <body>
   <header>
-    <div class="title">休暇届 承認サイン</div>
+    <div class="title">休暇届 承認</div>
   </header>
 
   <div class="content">
     <div class="sign-card">
-      <h2>承認サイン</h2>
-      <div class="sub">下の枠内にサインを書いてください（タッチ・ペン対応）</div>
-      <canvas id="signCanvas" width="400" height="200"></canvas>
+      <h2>承認処理</h2>
+
+      <!-- 承認者選択 -->
+      <div class="approver-section">
+        <label>承認者を選択してください</label>
+        <select class="approver-select" id="approverSelect" onchange="onApproverChange()">
+          <option value="">読み込み中...</option>
+        </select>
+        <div id="stampStatus"></div>
+      </div>
+
+      <!-- サインエリア（電子印がない場合のみ表示） -->
+      <div class="sign-area" id="signArea" style="display:none;">
+        <div class="sign-area-label">電子印が未登録のため、下の枠内にサインを書いてください</div>
+        <canvas id="signCanvas" width="400" height="200"></canvas>
+        <div style="text-align:center;margin-top:8px;">
+          <button class="btn-clear" onclick="clearCanvas()">クリア</button>
+        </div>
+      </div>
+
       <div class="actions">
         <button class="btn-back" onclick="goBack()">戻る</button>
-        <button class="btn-clear" onclick="clearCanvas()">クリア</button>
-        <button class="btn-approve" id="approveBtn" onclick="doApprove()">承認する</button>
+        <button class="btn-approve" id="approveBtn" onclick="doApprove()" disabled>承認する</button>
       </div>
       <div class="status-msg" id="statusMsg"></div>
     </div>
@@ -73,12 +107,16 @@
 var REQ_ID = '<?= REQ_ID ?>';
 var APP_URL = '<?= APP_URL ?>';
 
+var approverList = [];
+var selectedApprover = null;
+var hasStamp = false;
+
+// ====== Canvas setup ======
 var canvas = document.getElementById('signCanvas');
 var ctx = canvas.getContext('2d');
 var drawing = false;
 var hasDrawn = false;
 
-// Resize canvas for high DPI
 function resizeCanvas() {
   var rect = canvas.getBoundingClientRect();
   var dpr = window.devicePixelRatio || 1;
@@ -93,20 +131,13 @@ function resizeCanvas() {
   ctx.lineJoin = 'round';
 }
 
-window.addEventListener('DOMContentLoaded', function() {
-  resizeCanvas();
-});
-
-// Pointer events (unified touch/mouse/pen)
 canvas.addEventListener('pointerdown', function(e) {
-  drawing = true;
-  hasDrawn = true;
+  drawing = true; hasDrawn = true;
   var rect = canvas.getBoundingClientRect();
   ctx.beginPath();
   ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
   e.preventDefault();
 });
-
 canvas.addEventListener('pointermove', function(e) {
   if (!drawing) return;
   var rect = canvas.getBoundingClientRect();
@@ -114,15 +145,8 @@ canvas.addEventListener('pointermove', function(e) {
   ctx.stroke();
   e.preventDefault();
 });
-
-canvas.addEventListener('pointerup', function(e) {
-  drawing = false;
-  e.preventDefault();
-});
-
-canvas.addEventListener('pointerleave', function(e) {
-  drawing = false;
-});
+canvas.addEventListener('pointerup', function(e) { drawing = false; e.preventDefault(); });
+canvas.addEventListener('pointerleave', function() { drawing = false; });
 
 function clearCanvas() {
   var rect = canvas.getBoundingClientRect();
@@ -130,12 +154,65 @@ function clearCanvas() {
   hasDrawn = false;
 }
 
+// ====== 承認者一覧を読み込み ======
+window.addEventListener('DOMContentLoaded', function() {
+  resizeCanvas();
+
+  google.script.run
+    .withSuccessHandler(function(list) {
+      approverList = list || [];
+      var sel = document.getElementById('approverSelect');
+      sel.innerHTML = '<option value="">-- 承認者を選択 --</option>';
+      for (var i = 0; i < approverList.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = approverList[i].email;
+        opt.textContent = approverList[i].name + '（' + approverList[i].email + '）';
+        sel.appendChild(opt);
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('approverSelect').innerHTML =
+        '<option value="">取得エラー: ' + err.message + '</option>';
+    })
+    .api_getApproverList();
+});
+
+// ====== 承認者変更時 ======
+function onApproverChange() {
+  var sel = document.getElementById('approverSelect');
+  var email = sel.value;
+  var statusEl = document.getElementById('stampStatus');
+  var signArea = document.getElementById('signArea');
+  var btn = document.getElementById('approveBtn');
+
+  if (!email) {
+    statusEl.innerHTML = '';
+    signArea.style.display = 'none';
+    btn.disabled = true;
+    selectedApprover = null;
+    hasStamp = false;
+    return;
+  }
+
+  selectedApprover = email;
+  // StampMapに登録されている = 電子印あり（リストに載っている時点で登録済み）
+  hasStamp = true;
+  statusEl.innerHTML = '<span class="stamp-badge has-stamp">電子印あり</span>';
+  signArea.style.display = 'none';
+  btn.disabled = false;
+}
+
+// ====== 承認実行 ======
 function goBack() {
   window.top.location.href = APP_URL + '?page=preview&reqId=' + REQ_ID;
 }
 
 function doApprove() {
-  if (!hasDrawn) {
+  if (!selectedApprover) {
+    alert('承認者を選択してください。');
+    return;
+  }
+  if (!hasStamp && !hasDrawn) {
     alert('サインを書いてください。');
     return;
   }
@@ -148,24 +225,26 @@ function doApprove() {
   msg.textContent = '承認処理中... しばらくお待ちください。';
   msg.className = 'status-msg';
 
-  // canvas → Base64 PNG
-  var signBase64 = canvas.toDataURL('image/png');
+  // サインBase64（電子印がない場合のみ）
+  var signBase64 = '';
+  if (!hasStamp && hasDrawn) {
+    signBase64 = canvas.toDataURL('image/png');
+  }
 
   google.script.run
     .withSuccessHandler(function(result) {
-      console.log('approve result:', result, 'APP_URL=[' + APP_URL + ']');
+      console.log('approve result:', result);
       if (result && result.ok) {
         msg.className = 'status-msg success';
         btn.style.display = 'none';
-        document.querySelector('.btn-clear').style.display = 'none';
         document.querySelector('.btn-back').style.display = 'none';
-        // 承認済プレビューへ遷移（meta refreshでサンドボックス回避）
         var previewUrl = APP_URL + '?page=preview&reqId=' + REQ_ID + '&approved=1';
         var meta = document.createElement('meta');
         meta.httpEquiv = 'refresh';
         meta.content = '1;url=' + previewUrl;
         document.head.appendChild(meta);
-        msg.innerHTML = '承認が完了しました。<br>承認済プレビューを表示します...<br><a href="' + previewUrl + '" target="_top" style="font-size:13px;color:#0ea5e9;">自動で切り替わらない場合はこちら</a>';
+        msg.innerHTML = '承認が完了しました。<br>承認済プレビューを表示します...<br>'
+          + '<a href="' + previewUrl + '" target="_top" style="font-size:13px;color:#0ea5e9;">自動で切り替わらない場合はこちら</a>';
       } else {
         msg.textContent = '承認に失敗しました。';
         msg.className = 'status-msg error';
@@ -180,7 +259,7 @@ function doApprove() {
       btn.disabled = false;
       btn.textContent = '承認する';
     })
-    .api_approveLeaveRequest(REQ_ID, signBase64);
+    .api_approveLeaveRequest(REQ_ID, signBase64, selectedApprover);
 }
 </script>
 </body>

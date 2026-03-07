@@ -287,8 +287,11 @@ function api_getUpcomingLeaves(deptId, workerId) {
 
 /**
  * 承認処理（sign.htmlから呼ばれる）
+ * @param {string} reqId - 申請ID
+ * @param {string} signBase64 - 手書きサインBase64（電子印がない場合のフォールバック）
+ * @param {string} approverEmail - 承認者メールアドレス（StampMap検索用）
  */
-function api_approveLeaveRequest(reqId, signBase64) {
+function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
   if (!reqId) throw new Error('REQ_IDが指定されていません。');
 
   var lock = LockService.getScriptLock();
@@ -339,10 +342,10 @@ function api_approveLeaveRequest(reqId, signBase64) {
     sh.getRange(targetRow, idx['サイン画像URL'] + 1).setValue(signImageUrl);
     SpreadsheetApp.flush();
 
-    // 3. PDF生成
+    // 3. PDF生成（承認者メールを渡す）
     var pdfResult = null;
     try {
-      pdfResult = generateLeavePdf_(reqId);
+      pdfResult = generateLeavePdf_(reqId, approverEmail);
       if (pdfResult && pdfResult.ok) {
         if (idx['PDF_URL'] !== undefined) {
           sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');

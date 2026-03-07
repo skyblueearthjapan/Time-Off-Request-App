@@ -145,6 +145,35 @@ function getStampFileId_(email) {
   return '';
 }
 
+/**
+ * 承認者一覧を返す（StampMapから取得、sign.htmlのドロップダウン用）
+ */
+function api_getApproverList() {
+  var settings = getSettings_();
+  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
+  if (!sourceId) sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
+
+  try {
+    var ss = SpreadsheetApp.openById(sourceId);
+    var sh = ss.getSheetByName('StampMap');
+    if (!sh || sh.getLastRow() < 2) return [];
+
+    var data = sh.getDataRange().getValues();
+    var list = [];
+    for (var r = 1; r < data.length; r++) {
+      var email = String(data[r][0] || '').trim();
+      var name = String(data[r][2] || '').trim();
+      if (email) {
+        list.push({ email: email, name: name });
+      }
+    }
+    return list;
+  } catch (e) {
+    console.error('承認者一覧取得エラー: ' + e.message);
+    return [];
+  }
+}
+
 // ====== API（google.script.run用） ======
 
 function api_getDeptList() {
