@@ -210,29 +210,35 @@ function api_getLookupData() {
 }
 
 /**
- * M_CALENDARから休日出勤日（振替元）の候補を返す（年度内の休日・祝日・土日）
- * 振替休暇の「どの休日に出勤したか」を選ぶプルダウン用
+ * 休日出勤日（振替元）の候補を返す（年度内の休日・祝日・土日）
+ * M_CALENDARにデータがある期間はそちらを優先、
+ * データがない期間は一般的な土日・祝日（日本の国民の祝日）で自動補完
  */
 function api_getHolidayDays() {
-  var sh = getDb_().getSheetByName(SHEET.CALENDAR);
-  if (!sh || sh.getLastRow() < 2) return [];
-
-  var values = sh.getDataRange().getValues();
-  var H = values[0].map(function(h) { return normalize_(h); });
-  var dateIdx = H.indexOf('日付');
-  var kubunIdx = H.indexOf('区分');
-  if (dateIdx < 0 || kubunIdx < 0) return [];
-
-  // カレンダーから休日・祝日・出勤土曜を取得
+  // M_CALENDARからデータ取得
   var calMap = {};
-  for (var r = 1; r < values.length; r++) {
-    var d = values[r][dateIdx];
-    if (!d) continue;
-    if (!(d instanceof Date)) d = new Date(d);
-    if (isNaN(d.getTime())) continue;
-    var key = fmtDate_(d);
-    calMap[key] = normalize_(values[r][kubunIdx]);
+  var calCoveredDates = {};
+  var sh = getDb_().getSheetByName(SHEET.CALENDAR);
+  if (sh && sh.getLastRow() >= 2) {
+    var values = sh.getDataRange().getValues();
+    var H = values[0].map(function(h) { return normalize_(h); });
+    var dateIdx = H.indexOf('日付');
+    var kubunIdx = H.indexOf('区分');
+    if (dateIdx >= 0 && kubunIdx >= 0) {
+      for (var r = 1; r < values.length; r++) {
+        var d = values[r][dateIdx];
+        if (!d) continue;
+        if (!(d instanceof Date)) d = new Date(d);
+        if (isNaN(d.getTime())) continue;
+        var key = fmtDate_(d);
+        calMap[key] = normalize_(values[r][kubunIdx]);
+        calCoveredDates[key] = true;
+      }
+    }
   }
+
+  // 日本の祝日マップ（一般カレンダー補完用）
+  var publicHolidays = getJapanesePublicHolidays_();
 
   // 年度範囲を算出（年度初め〜今日）
   var today = new Date();
@@ -244,21 +250,131 @@ function api_getHolidayDays() {
   while (cursor <= today) {
     var key = fmtDate_(cursor);
     var dow = cursor.getDay();
-    var kubun = calMap[key] || '';
 
-    // 休日・祝日・通常の土日（出勤土曜は除く＝出勤扱い）
-    if (kubun === '休日' || kubun === '祝日') {
-      result.push({ date: key, label: kubun });
-    } else if (kubun === '出勤土曜') {
-      // 出勤土曜は勤務日なので休日候補に含めない
-    } else if (dow === 0 || dow === 6) {
-      // 通常の土日
-      result.push({ date: key, label: dow === 0 ? '日曜' : '土曜' });
+    if (calCoveredDates[key]) {
+      // M_CALENDARにデータあり → カレンダーの区分に従う
+      var kubun = calMap[key];
+      if (kubun === '休日' || kubun === '祝日') {
+        result.push({ date: key, label: kubun });
+      } else if (kubun === '出勤土曜') {
+        // 出勤土曜は勤務日 → 候補に含めない
+      } else if (dow === 0 || dow === 6) {
+        result.push({ date: key, label: dow === 0 ? '日曜' : '土曜' });
+      }
+    } else {
+      // M_CALENDARにデータなし → 一般カレンダーで補完
+      if (publicHolidays[key]) {
+        result.push({ date: key, label: '祝日（' + publicHolidays[key] + '）' });
+      } else if (dow === 0) {
+        result.push({ date: key, label: '日曜' });
+      } else if (dow === 6) {
+        result.push({ date: key, label: '土曜' });
+      }
+      // 振替休日チェック（祝日が日曜の場合、月曜が振替休日）
+      // → publicHolidaysに含めて対応済み
     }
 
     cursor.setDate(cursor.getDate() + 1);
   }
   return result;
+}
+
+/**
+ * 指定年の日本の国民の祝日マップを返す（日付文字列 → 祝日名）
+ * M_CALENDARにデータがない期間の補完用
+ */
+function getJapanesePublicHolidays_() {
+  var today = new Date();
+  var fy = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
+  // 年度内に含まれる年（4月〜12月=fy, 1月〜3月=fy+1）
+  var years = [fy, fy + 1];
+
+  var holidays = {};
+  for (var yi = 0; yi < years.length; yi++) {
+    var y = years[yi];
+    var h = getHolidaysForYear_(y);
+    for (var key in h) {
+      holidays[key] = h[key];
+    }
+  }
+
+  // 振替休日を追加（祝日が日曜の場合、翌日以降の最初の平日が振替休日）
+  var keys = Object.keys(holidays).sort();
+  for (var i = 0; i < keys.length; i++) {
+    var dt = new Date(keys[i] + 'T00:00:00');
+    if (dt.getDay() === 0) { // 日曜
+      var sub = new Date(dt);
+      sub.setDate(sub.getDate() + 1);
+      while (holidays[fmtDate_(sub)]) {
+        sub.setDate(sub.getDate() + 1);
+      }
+      holidays[fmtDate_(sub)] = '振替休日';
+    }
+  }
+
+  // 国民の休日（祝日と祝日に挟まれた平日）
+  for (var i = 0; i < keys.length - 1; i++) {
+    var d1 = new Date(keys[i] + 'T00:00:00');
+    var d2 = new Date(keys[i + 1] + 'T00:00:00');
+    var diff = (d2 - d1) / 86400000;
+    if (diff === 2) {
+      var between = new Date(d1);
+      between.setDate(between.getDate() + 1);
+      var bKey = fmtDate_(between);
+      if (!holidays[bKey] && between.getDay() !== 0 && between.getDay() !== 6) {
+        holidays[bKey] = '国民の休日';
+      }
+    }
+  }
+
+  return holidays;
+}
+
+/**
+ * 指定年の固定祝日＋ハッピーマンデー＋春分・秋分を返す
+ */
+function getHolidaysForYear_(y) {
+  var h = {};
+  function add(m, d, name) { h[y + '-' + z2(m) + '-' + z2(d)] = name; }
+  function z2(n) { return n < 10 ? '0' + n : '' + n; }
+  // n番目の月曜日を求める
+  function nthMonday(month, n) {
+    var d = new Date(y, month - 1, 1);
+    var count = 0;
+    while (count < n) {
+      if (d.getDay() === 1) count++;
+      if (count < n) d.setDate(d.getDate() + 1);
+    }
+    return d.getDate();
+  }
+
+  // 固定祝日
+  add(1, 1, '元日');
+  add(2, 11, '建国記念の日');
+  add(2, 23, '天皇誕生日');
+  add(4, 29, '昭和の日');
+  add(5, 3, '憲法記念日');
+  add(5, 4, 'みどりの日');
+  add(5, 5, 'こどもの日');
+  add(8, 11, '山の日');
+  add(11, 3, '文化の日');
+  add(11, 23, '勤労感謝の日');
+
+  // ハッピーマンデー
+  add(1, nthMonday(1, 2), '成人の日');
+  add(7, nthMonday(7, 3), '海の日');
+  add(9, nthMonday(9, 3), '敬老の日');
+  add(10, nthMonday(10, 2), 'スポーツの日');
+
+  // 春分の日（概算: 20 or 21）
+  var shunbun = Math.floor(20.8431 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  add(3, shunbun, '春分の日');
+
+  // 秋分の日（概算: 22 or 23）
+  var shubun = Math.floor(23.2488 + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4));
+  add(9, shubun, '秋分の日');
+
+  return h;
 }
 
 /**
