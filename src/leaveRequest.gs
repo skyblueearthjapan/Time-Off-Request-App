@@ -120,9 +120,6 @@ function api_submitLeaveRequest(data) {
 function api_getLeaveRequestById(reqId) {
   if (!reqId) return null;
 
-  // REQ_IDカラム名の候補（英語ヘッダ対応）
-  var reqIdKeys = ['REQ_ID', 'REQUEST_ID'];
-
   // リトライ付き（書込み直後の読取り遅延対策）
   var MAX_RETRY = 5;
   for (var attempt = 0; attempt < MAX_RETRY; attempt++) {
@@ -135,34 +132,43 @@ function api_getLeaveRequestById(reqId) {
     var sh = info.sh;
     var idx = info.idx;
     var lastRow = sh.getLastRow();
+
+    console.log('attempt ' + (attempt + 1) + ': lastRow=' + lastRow + ', header=' + JSON.stringify(info.header));
+
     if (lastRow < 2) continue;
 
-    // REQ_IDカラムを検出
-    var reqIdCol = undefined;
-    for (var k = 0; k < reqIdKeys.length; k++) {
-      if (idx[reqIdKeys[k]] !== undefined) { reqIdCol = idx[reqIdKeys[k]]; break; }
-    }
-    // ヘッダ直接検索（フォールバック）
+    // REQ_IDカラムを検出（直接 or ヘッダ部分一致）
+    var reqIdCol = idx['REQ_ID'];
     if (reqIdCol === undefined) {
       for (var h = 0; h < info.header.length; h++) {
-        if (info.header[h].toUpperCase().indexOf('REQ') >= 0 && info.header[h].toUpperCase().indexOf('ID') >= 0) {
+        if (info.header[h].toUpperCase().indexOf('REQ') >= 0) {
           reqIdCol = h; break;
         }
       }
     }
     if (reqIdCol === undefined) {
-      Logger.log('api_getLeaveRequestById: REQ_IDカラムが見つかりません。ヘッダ: ' + info.header.join(', '));
+      console.log('REQ_IDカラムなし。header=' + info.header.join(','));
       continue;
     }
 
     var readCols = Math.max(info.header.length, sh.getLastColumn());
     var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
 
+    // 全REQ_IDをログ出力（デバッグ用）
+    var allIds = [];
+    for (var i = 0; i < values.length; i++) {
+      var cellVal = values[i][reqIdCol];
+      allIds.push(String(cellVal));
+    }
+    console.log('検索対象reqId=[' + reqId + '], シート内REQ_ID一覧=' + JSON.stringify(allIds) + ', reqIdCol=' + reqIdCol);
+
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
-      if (normalize_(row[reqIdCol]) === reqId) {
+      var cellReqId = normalize_(row[reqIdCol]);
+      if (cellReqId === reqId) {
+        console.log('FOUND at row ' + (i + 2));
         return {
-          reqId: normalize_(row[reqIdCol]),
+          reqId: cellReqId,
           fiscalYear: row[idx['年度']],
           deptId: normalize_(row[idx['部署ID']]),
           deptName: normalize_(row[idx['部署名']]),
@@ -185,12 +191,38 @@ function api_getLeaveRequestById(reqId) {
         };
       }
     }
-
-    Logger.log('api_getLeaveRequestById: attempt ' + (attempt + 1) + '/' + MAX_RETRY + ' not found. reqId=' + reqId + ', lastRow=' + lastRow + ', dataRows=' + values.length + ', reqIdCol=' + reqIdCol + ', header=' + info.header.join(','));
   }
 
-  Logger.log('api_getLeaveRequestById: 全リトライ失敗。reqId=' + reqId);
+  console.log('全リトライ失敗。reqId=' + reqId);
   return null;
+}
+
+/**
+ * デバッグ用：T_LEAVE_REQUESTの状態を確認（GASエディタから直接実行）
+ */
+function debug_checkLeaveRequestSheet() {
+  var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+  var sh = info.sh;
+  var lastRow = sh.getLastRow();
+  var msg = '=== T_LEAVE_REQUEST デバッグ ===\n';
+  msg += 'シート名: ' + sh.getName() + '\n';
+  msg += 'ヘッダ: ' + JSON.stringify(info.header) + '\n';
+  msg += 'idx keys: ' + JSON.stringify(Object.keys(info.idx)) + '\n';
+  msg += 'lastRow: ' + lastRow + '\n';
+
+  if (lastRow >= 2) {
+    var reqIdCol = info.idx['REQ_ID'];
+    msg += 'REQ_ID col index: ' + reqIdCol + '\n';
+    var vals = sh.getRange(2, 1, lastRow - 1, info.header.length).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      var raw = vals[i][reqIdCol !== undefined ? reqIdCol : 0];
+      msg += 'Row ' + (i + 2) + ': REQ_ID=[' + raw + '] type=' + typeof raw + '\n';
+    }
+  }
+
+  console.log(msg);
+  Logger.log(msg);
+  return msg;
 }
 
 /**
