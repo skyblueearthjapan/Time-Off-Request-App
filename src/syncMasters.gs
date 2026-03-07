@@ -81,9 +81,68 @@ function syncAllMasters() {
       }
     }
 
+    // カレンダーマスタも同期（別ソースSS）
+    try {
+      syncCalendarMaster();
+      log.push('OK 社内カレンダーマスタ -> M_CALENDAR');
+    } catch (calErr) {
+      log.push('ERROR M_CALENDAR: ' + calErr.message);
+    }
+
     var summary = 'syncAllMasters:\n' + log.join('\n');
     Logger.log(summary);
     console.log(summary);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 社内カレンダーマスタを外部スプレッドシート → M_CALENDAR へ同期（全置換）。
+ * Settings: CALENDAR_SOURCE_SSID = 同期元スプレッドシートID（残業・休日出勤申請app）
+ *           CALENDAR_SOURCE_SHEET = 同期元の社内カレンダーシート名
+ */
+function syncCalendarMaster() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+
+  try {
+    var settings = getSettings_();
+    var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
+    if (!sourceId) {
+      sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
+      Logger.log('CALENDAR_SOURCE_SSID未設定のためデフォルトIDを使用: ' + sourceId);
+    }
+    var srcSheetName = normalize_(settings['CALENDAR_SOURCE_SHEET']);
+    if (!srcSheetName) {
+      srcSheetName = '社内カレンダーマスタ';
+      Logger.log('CALENDAR_SOURCE_SHEET未設定のためデフォルト値を使用: ' + srcSheetName);
+    }
+
+    var srcSS = SpreadsheetApp.openById(sourceId);
+    var srcSh = srcSS.getSheetByName(srcSheetName);
+    if (!srcSh) throw new Error('元シートなし: ' + srcSheetName);
+
+    var dstSh = requireSheet_(SHEET.CALENDAR);
+    var data = readSheetData_(srcSh);
+    if (!data || !data.length) throw new Error('社内カレンダーマスタが空です');
+
+    data = compactRows_(data);
+
+    try {
+      replaceMasterData_(dstSh, data);
+    } catch (writeErr) {
+      console.warn('replaceMasterData_ failed for M_CALENDAR, recreating: ' + writeErr.message);
+      var dstSS = getDb_();
+      dstSS.deleteSheet(dstSh);
+      dstSh = dstSS.insertSheet(SHEET.CALENDAR);
+      dstSh.getRange(1, 1, data.length, data[0].length).setValues(data);
+    }
+
+    SpreadsheetApp.flush();
+    var msg = 'syncCalendarMaster: OK (' + data.length + ' rows)';
+    Logger.log(msg);
+    console.log(msg);
   } finally {
     lock.releaseLock();
   }

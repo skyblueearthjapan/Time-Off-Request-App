@@ -62,6 +62,7 @@ function onOpen() {
     .addItem('初期セットアップ（シート自動生成）', 'setupAllSheets')
     .addSeparator()
     .addItem('マスタ同期（手動実行）', 'syncAllMasters')
+    .addItem('カレンダー同期（手動実行）', 'syncCalendarMaster')
     .addItem('サマリー再構築', 'rebuildLeaveSummary')
     .addSeparator()
     .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails')
@@ -91,6 +92,8 @@ function setupAllSheets() {
     ['PDF_TEMPLATE_SSID', '', 'PDFテンプレートスプレッドシートID'],
     ['MASTER_SOURCE_SSID', '1iu5HoaknlW1W1HheeYv0jqcRq-aY0SyEE2seQd2pHkQ', '同期元マスタSS（作業日報_全従業員用）'],
     ['MASTER_SOURCE_WORKER_SHEET', '作業員マスタ', '同期元の作業員シート名'],
+    ['CALENDAR_SOURCE_SSID', '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ', '社内カレンダー同期元SS（残業・休日出勤申請app）'],
+    ['CALENDAR_SOURCE_SHEET', '社内カレンダーマスタ', '同期元の社内カレンダーシート名'],
   ];
   if (settingSh.getLastRow() < 1) {
     // 新規: ヘッダ + 全KEY
@@ -142,6 +145,21 @@ function setupAllSheets() {
     created.push('作業員マスタ');
   } else {
     skipped.push('作業員マスタ（既存）');
+  }
+
+  // ---------- 3. M_CALENDAR ----------
+  var calSh = ensureSheet_(ss, 'M_CALENDAR');
+  if (calSh.getLastRow() < 1) {
+    var calHeader = [['日付', '区分', '曜日', '備考']];
+    calSh.getRange(1, 1, 1, 4).setValues(calHeader);
+    formatHeaderRow_(calSh);
+    calSh.setColumnWidth(1, 120);
+    calSh.setColumnWidth(2, 100);
+    calSh.setColumnWidth(3, 60);
+    calSh.setColumnWidth(4, 200);
+    created.push('M_CALENDAR');
+  } else {
+    skipped.push('M_CALENDAR（既存）');
   }
 
   // ---------- 4. M_LOOKUP ----------
