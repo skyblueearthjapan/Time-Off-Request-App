@@ -89,8 +89,13 @@ function generateLeavePdf_(reqId) {
     var tmpFile = templateFile.makeCopy(tmpName);
     var tmpSs = SpreadsheetApp.openById(tmpFile.getId());
 
-    // 申請書シートに直接書込み
-    var formSheet = tmpSs.getSheets()[0]; // 最初のシート
+    // PDF_TEMPLATEシートを名前で取得
+    var formSheet = tmpSs.getSheetByName('PDF_TEMPLATE');
+    if (!formSheet) {
+      // フォールバック: シート名が異なる場合は最初のシートを試行
+      formSheet = tmpSs.getSheets()[0];
+      console.warn('PDF_TEMPLATEシートが見つからないため最初のシートを使用: ' + formSheet.getName());
+    }
     fillLeaveTemplate_(formSheet, reqData);
     SpreadsheetApp.flush();
 
