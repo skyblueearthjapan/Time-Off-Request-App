@@ -155,12 +155,14 @@ function doApprove() {
     .withSuccessHandler(function(result) {
       console.log('approve result:', result, 'APP_URL=[' + APP_URL + ']');
       if (result && result.ok) {
+        msg.textContent = '承認が完了しました。';
         msg.className = 'status-msg success';
-        var topUrl = APP_URL ? APP_URL + '?page=top' : '';
-        msg.innerHTML = '承認が完了しました。<br><a href="' + topUrl + '" target="_top" style="display:inline-block;margin-top:10px;padding:10px 24px;border-radius:12px;background:linear-gradient(135deg,#1f9d55,#1bd67f);color:#fff;font-weight:800;text-decoration:none;font-size:15px;">TOPに戻る</a>';
         btn.style.display = 'none';
         document.querySelector('.btn-clear').style.display = 'none';
         document.querySelector('.btn-back').style.display = 'none';
+        // alertのOKクリックがユーザー操作となり、window.top遷移が許可される
+        alert('承認が完了しました。TOPページに戻ります。');
+        window.top.location.href = APP_URL + '?page=top';
       } else {
         msg.textContent = '承認に失敗しました。';
         msg.className = 'status-msg error';
