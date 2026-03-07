@@ -1,6 +1,22 @@
 // ====== PDF生成（テンプレートレス・動的構築方式） ======
 
 /**
+ * テスト用：GASエディタから直接実行してPDF生成を確認
+ * 実行前に REQ_ID を実在のものに書き換えてください
+ */
+function test_generatePdf() {
+  var reqId = 'LV-20260310-001'; // ← 実在のREQ_IDに変更
+  try {
+    var result = generateLeavePdf_(reqId);
+    console.log('PDF生成成功: ' + JSON.stringify(result));
+    Logger.log('PDF URL: ' + result.pdfUrl);
+  } catch (e) {
+    console.error('PDF生成エラー: ' + e.message);
+    console.error(e.stack);
+  }
+}
+
+/**
  * 令和変換
  */
 function toReiwa_(dateObj) {
