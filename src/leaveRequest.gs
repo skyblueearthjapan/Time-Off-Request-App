@@ -120,11 +120,15 @@ function api_submitLeaveRequest(data) {
 function api_getLeaveRequestById(reqId) {
   if (!reqId) return null;
 
+  // REQ_IDカラム名の候補（英語ヘッダ対応）
+  var reqIdKeys = ['REQ_ID', 'REQUEST_ID'];
+
   // リトライ付き（書込み直後の読取り遅延対策）
-  for (var attempt = 0; attempt < 3; attempt++) {
+  var MAX_RETRY = 5;
+  for (var attempt = 0; attempt < MAX_RETRY; attempt++) {
     if (attempt > 0) {
       SpreadsheetApp.flush();
-      Utilities.sleep(1000);
+      Utilities.sleep(1500);
     }
 
     var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
@@ -133,14 +137,32 @@ function api_getLeaveRequestById(reqId) {
     var lastRow = sh.getLastRow();
     if (lastRow < 2) continue;
 
+    // REQ_IDカラムを検出
+    var reqIdCol = undefined;
+    for (var k = 0; k < reqIdKeys.length; k++) {
+      if (idx[reqIdKeys[k]] !== undefined) { reqIdCol = idx[reqIdKeys[k]]; break; }
+    }
+    // ヘッダ直接検索（フォールバック）
+    if (reqIdCol === undefined) {
+      for (var h = 0; h < info.header.length; h++) {
+        if (info.header[h].toUpperCase().indexOf('REQ') >= 0 && info.header[h].toUpperCase().indexOf('ID') >= 0) {
+          reqIdCol = h; break;
+        }
+      }
+    }
+    if (reqIdCol === undefined) {
+      Logger.log('api_getLeaveRequestById: REQ_IDカラムが見つかりません。ヘッダ: ' + info.header.join(', '));
+      continue;
+    }
+
     var readCols = Math.max(info.header.length, sh.getLastColumn());
     var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
 
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
-      if (normalize_(row[idx['REQ_ID']]) === reqId) {
+      if (normalize_(row[reqIdCol]) === reqId) {
         return {
-          reqId: normalize_(row[idx['REQ_ID']]),
+          reqId: normalize_(row[reqIdCol]),
           fiscalYear: row[idx['年度']],
           deptId: normalize_(row[idx['部署ID']]),
           deptName: normalize_(row[idx['部署名']]),
@@ -164,9 +186,10 @@ function api_getLeaveRequestById(reqId) {
       }
     }
 
-    Logger.log('api_getLeaveRequestById: attempt ' + (attempt + 1) + ' not found. reqId=' + reqId + ', lastRow=' + lastRow + ', dataRows=' + values.length);
+    Logger.log('api_getLeaveRequestById: attempt ' + (attempt + 1) + '/' + MAX_RETRY + ' not found. reqId=' + reqId + ', lastRow=' + lastRow + ', dataRows=' + values.length + ', reqIdCol=' + reqIdCol + ', header=' + info.header.join(','));
   }
 
+  Logger.log('api_getLeaveRequestById: 全リトライ失敗。reqId=' + reqId);
   return null;
 }
 

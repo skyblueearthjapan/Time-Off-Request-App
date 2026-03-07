@@ -95,7 +95,7 @@ window.addEventListener('DOMContentLoaded', function() {
   google.script.run
     .withSuccessHandler(function(data) {
       if (!data) {
-        document.getElementById('loadingMsg').textContent = '申請データが見つかりません。';
+        document.getElementById('loadingMsg').textContent = '申請データが見つかりません。（REQ_ID: ' + REQ_ID + '）\nGASエディタの実行ログを確認してください。';
         return;
       }
       reqData = data;
