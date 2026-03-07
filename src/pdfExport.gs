@@ -1,21 +1,25 @@
 // ====== PDF生成 ======
 
 /**
- * 休暇届PDFのセル位置マッピング（テンプレートSS内のシート）
+ * 休暇届PDFのセル位置マッピング（PDF_MAPシート準拠）
+ * docs/休暇届アプリ_最強DBマスターガイド.md §4.1 参照
  */
 var LEAVE_PDF_MAP = {
-  title: 'C1',          // タイトル「休 暇 届」
-  submittedDate: 'F2',  // 申請日
-  deptName: 'C4',       // 部署名
-  workerName: 'E4',     // 氏名
-  leaveKubun: 'C6',     // 休暇区分（全日休/半日休）
-  halfDayType: 'E6',    // 半日区分（午前/午後）
-  leaveDate: 'C8',      // 休暇日
-  leaveDateReiwa: 'E8', // 休暇日（令和）
-  leaveType: 'C10',     // 休暇種類
-  substituteDate: 'C12',// 振替元出勤日
-  reason: 'C14',        // 理由・詳細
-  signArea: 'F18',      // 承認印エリア
+  LEAVE_START_REIWA_YEAR: 'B6',  // 開始：令和年（数値）
+  LEAVE_START_MONTH:      'E6',  // 開始：月
+  LEAVE_START_DAY:        'H6',  // 開始：日
+  LEAVE_START_WDAY:       'K6',  // 開始：曜日（例：月）
+  LEAVE_END_REIWA_YEAR:   'B7',  // 終了：令和年
+  LEAVE_END_MONTH:        'E7',  // 終了：月
+  LEAVE_END_DAY:          'H7',  // 終了：日
+  LEAVE_END_WDAY:         'K7',  // 終了：曜日
+  LEAVE_END_HOUR:         'M7',  // 終了：時
+  LEAVE_END_MIN:          'B8',  // 終了：分
+  LEAVE_REASON_SHORT:     'A14', // 理由（短文）
+  SUBMIT_REIWA_YEAR:      'J30', // 届出日：令和年
+  SUBMIT_MONTH:           'M30', // 届出日：月
+  SUBMIT_DAY:             'H31', // 届出日：日
+  WORKER_NAME:            'J34', // 氏名
 };
 
 /**
@@ -122,45 +126,77 @@ function generateLeavePdf_(reqId) {
 }
 
 /**
- * テンプレートシートにデータ書込み
+ * テンプレートシートにデータ書込み（PDF_MAP準拠）
  */
 function fillLeaveTemplate_(sheet, data) {
-  // 申請日
-  if (data.submittedAt) {
-    var sd = data.submittedAt instanceof Date ? data.submittedAt : new Date(data.submittedAt);
-    sheet.getRange(LEAVE_PDF_MAP.submittedDate).setValue(fmtDate_(sd, 'yyyy/MM/dd'));
-  }
-  // 部署名
-  sheet.getRange(LEAVE_PDF_MAP.deptName).setValue(data.deptName || '');
-  // 氏名
-  sheet.getRange(LEAVE_PDF_MAP.workerName).setValue(data.workerName || '');
-  // 休暇区分
-  sheet.getRange(LEAVE_PDF_MAP.leaveKubun).setValue(data.leaveKubun || '');
-  // 半日区分
-  if (data.halfDayType) {
-    sheet.getRange(LEAVE_PDF_MAP.halfDayType).setValue(data.halfDayType);
-  }
-  // 休暇日
+  var DOWS = ['日','月','火','水','木','金','土'];
+
+  // --- 休暇日（開始・終了） ---
   if (data.leaveDate) {
     var ld = data.leaveDate instanceof Date ? data.leaveDate : new Date(data.leaveDate);
-    sheet.getRange(LEAVE_PDF_MAP.leaveDate).setValue(fmtDate_(ld, 'yyyy/MM/dd'));
-    sheet.getRange(LEAVE_PDF_MAP.leaveDateReiwa).setValue(toReiwa_(ld));
+    var reiwaYear = ld.getFullYear() - 2018;
+    var month = ld.getMonth() + 1;
+    var day = ld.getDate();
+    var wday = DOWS[ld.getDay()];
+
+    // 開始日（Row 6）
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_REIWA_YEAR).setValue(reiwaYear);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_MONTH).setValue(month);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_DAY).setValue(day);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_WDAY).setValue(wday);
+
+    // 終了日（Row 7）- 全日休は同日、半日休も同日
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_REIWA_YEAR).setValue(reiwaYear);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MONTH).setValue(month);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_DAY).setValue(day);
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_WDAY).setValue(wday);
+
+    // 終了時刻（半日区分に応じて設定）
+    if (data.leaveKubun === '半日休') {
+      if (data.halfDayType === '午前') {
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(12);
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+      } else {
+        // 午後半休
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+      }
+    } else {
+      // 全日休
+      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
+      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+    }
   }
-  // 休暇種類
-  sheet.getRange(LEAVE_PDF_MAP.leaveType).setValue(data.leaveType || '');
-  // 振替元出勤日
-  if (data.substituteDate && data.leaveType === '振替休暇') {
+
+  // --- 理由（短文） ---
+  var reason = '';
+  if (data.leaveType === '特別休暇' && data.specialReason) {
+    reason = data.specialReason;
+  } else if (data.leaveType === '有給消化（私用）' && data.paidDetail) {
+    reason = data.paidDetail;
+  } else if (data.leaveType === '振替休暇' && data.substituteDate) {
     var subD = data.substituteDate instanceof Date ? data.substituteDate : new Date(data.substituteDate);
-    sheet.getRange(LEAVE_PDF_MAP.substituteDate).setValue(fmtDate_(subD, 'yyyy/MM/dd'));
+    reason = '振替（出勤日: ' + fmtDate_(subD, 'yyyy/MM/dd') + '）';
+  } else if (data.leaveType) {
+    reason = data.leaveType;
   }
-  // 理由・詳細
-  var reasons = [];
-  if (data.specialReason) reasons.push(data.specialReason);
-  if (data.paidDetail) reasons.push(data.paidDetail);
-  if (data.additionalDetail) reasons.push(data.additionalDetail);
-  if (reasons.length) {
-    sheet.getRange(LEAVE_PDF_MAP.reason).setValue(reasons.join('\n'));
+  if (data.additionalDetail) {
+    reason += (reason ? ' ' : '') + data.additionalDetail;
   }
+  if (reason) {
+    sheet.getRange(LEAVE_PDF_MAP.LEAVE_REASON_SHORT).setValue(reason);
+  }
+
+  // --- 届出日（令和） ---
+  if (data.submittedAt) {
+    var sd = data.submittedAt instanceof Date ? data.submittedAt : new Date(data.submittedAt);
+    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_REIWA_YEAR).setValue(sd.getFullYear() - 2018);
+    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_MONTH).setValue(sd.getMonth() + 1);
+    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_DAY).setValue(sd.getDate());
+  }
+
+  // --- 氏名 ---
+  sheet.getRange(LEAVE_PDF_MAP.WORKER_NAME).setValue(data.workerName || '');
 }
 
 /**
