@@ -96,7 +96,6 @@ function api_submitLeaveRequest(data) {
     setCol('振替元出勤日', data.substituteDate ? new Date(data.substituteDate) : '');
     setCol('特別理由', data.specialReason || '');
     setCol('有給詳細', data.paidDetail || '');
-    setCol('追加詳細', data.additionalDetail || '');
     setCol('申請日時', now);
     setCol('承認状態', STATUS.SUBMITTED);
     setCol('作成者メール', Session.getActiveUser().getEmail() || '');

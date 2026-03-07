@@ -556,18 +556,16 @@ function pdfBorder_(sheet, rangeStr, C) {
 
 /** 理由テキスト構築 */
 function pdfBuildReason_(data) {
-  var parts = [];
   if (data.leaveType === '特別休暇' && data.specialReason) {
-    parts.push(data.specialReason);
+    return data.specialReason;
   } else if (data.leaveType === '有給消化（私用）') {
-    parts.push(data.paidDetail || '私用のため');
+    return data.paidDetail || '私用のため';
   } else if (data.leaveType === '振替休暇') {
-    parts.push('振替休暇');
+    return '振替休暇';
   } else if (data.leaveType) {
-    parts.push(data.leaveType);
+    return data.leaveType;
   }
-  if (data.additionalDetail) parts.push(data.additionalDetail);
-  return parts.join('\n') || '―';
+  return '―';
 }
 
 /** サイン画像をDrive URLからシートに挿入 */

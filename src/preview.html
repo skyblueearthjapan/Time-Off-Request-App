@@ -139,8 +139,8 @@ function renderPreview(d) {
 
   var reasonDetail = '';
   if (d.leaveType === '特別休暇' && d.specialReason) reasonDetail = d.specialReason;
-  if (d.leaveType === '有給消化（私用）' && d.paidDetail) reasonDetail = d.paidDetail;
-  if (d.additionalDetail) reasonDetail += (reasonDetail ? '\n' : '') + d.additionalDetail;
+  else if (d.leaveType === '有給消化（私用）') reasonDetail = d.paidDetail || '私用のため';
+  else if (d.leaveType === '振替休暇') reasonDetail = '振替休暇';
 
   var substituteDisplay = '';
   if (d.leaveType === '振替休暇' && d.substituteDate) {

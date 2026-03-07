@@ -213,7 +213,7 @@
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
-          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
+          <button class="btn-sm" onclick="nextStep(9)">確認へ</button>
         </div>
       </div>
 
@@ -228,33 +228,21 @@
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
-          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
+          <button class="btn-sm" onclick="nextStep(9)">確認へ</button>
         </div>
       </div>
 
       <!-- Step7: 有給詳細 -->
       <div class="step" data-step="7">
         <div class="form-group">
-          <label>有給詳細</label>
+          <label>理由</label>
           <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-            病欠の場合は詳しく記載してください
+            病欠等の場合は詳しく記載してください（任意）
           </div>
-          <textarea id="paidDetail" placeholder="詳細を入力"></textarea>
+          <textarea id="paidDetail" placeholder="例：私用のため（未入力の場合は「私用のため」になります）"></textarea>
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
-          <button class="btn-sm" onclick="nextStep(8)">次へ</button>
-        </div>
-      </div>
-
-      <!-- Step8: 追加詳細 -->
-      <div class="step" data-step="8">
-        <div class="form-group">
-          <label>詳細を追加しますか？</label>
-          <textarea id="additionalDetail" placeholder="追加の詳細情報（任意・スキップ可）"></textarea>
-        </div>
-        <div class="step-actions">
-          <button class="ghost btn-sm" onclick="prevStepFromAdditional()">戻る</button>
           <button class="btn-sm" onclick="nextStep(9)">確認へ</button>
         </div>
       </div>
@@ -269,12 +257,10 @@
           <tr><th>休暇日</th><td id="cfmDate"></td></tr>
           <tr><th>休暇種類</th><td id="cfmType"></td></tr>
           <tr><th>振替元出勤日</th><td id="cfmSubDate"></td></tr>
-          <tr><th>特別理由</th><td id="cfmSpecial"></td></tr>
-          <tr><th>有給詳細</th><td id="cfmPaid"></td></tr>
-          <tr><th>追加詳細</th><td id="cfmAdditional"></td></tr>
+          <tr><th>理由</th><td id="cfmReason"></td></tr>
         </table>
         <div class="step-actions">
-          <button class="ghost btn-sm" onclick="prevStep(8)">戻る</button>
+          <button class="ghost btn-sm" onclick="prevStepFromConfirm()">戻る</button>
           <button class="btn-sm" id="submitBtn" onclick="submitRequest()">申請する</button>
         </div>
       </div>
@@ -462,7 +448,6 @@ function resetModal() {
   document.getElementById('substituteDate').value = '';
   document.getElementById('specialReason').value = '';
   document.getElementById('paidDetail').value = '';
-  document.getElementById('additionalDetail').value = '';
 }
 
 function showStep(n) {
@@ -524,10 +509,10 @@ function nextStepFromType() {
   if (typeVal === '振替休暇') { showStep(5); }
   else if (typeVal === '特別休暇') { showStep(6); }
   else if (typeVal === '有給消化（私用）') { showStep(7); }
-  else { showStep(8); }
+  else { showStep(9); buildConfirmation(); }
 }
 
-function prevStepFromAdditional() {
+function prevStepFromConfirm() {
   var type = document.querySelector('input[name="leaveType"]:checked');
   if (!type) { showStep(4); return; }
   var typeVal = type.value;
@@ -563,9 +548,18 @@ function buildConfirmation() {
   document.getElementById('cfmDate').textContent = document.getElementById('leaveDate').value;
   document.getElementById('cfmType').textContent = leaveType ? leaveType.value : '';
   document.getElementById('cfmSubDate').textContent = document.getElementById('substituteDate').value || '-';
-  document.getElementById('cfmSpecial').textContent = document.getElementById('specialReason').value || '-';
-  document.getElementById('cfmPaid').textContent = document.getElementById('paidDetail').value || '-';
-  document.getElementById('cfmAdditional').textContent = document.getElementById('additionalDetail').value || '-';
+
+  // 理由を統合表示
+  var reason = '-';
+  var typeVal = leaveType ? leaveType.value : '';
+  if (typeVal === '特別休暇') {
+    reason = document.getElementById('specialReason').value || '-';
+  } else if (typeVal === '有給消化（私用）') {
+    reason = document.getElementById('paidDetail').value || '私用のため';
+  } else if (typeVal === '振替休暇') {
+    reason = '振替休暇';
+  }
+  document.getElementById('cfmReason').textContent = reason;
 }
 
 function submitRequest() {
@@ -589,7 +583,6 @@ function submitRequest() {
     substituteDate: document.getElementById('substituteDate').value,
     specialReason: document.getElementById('specialReason').value,
     paidDetail: document.getElementById('paidDetail').value,
-    additionalDetail: document.getElementById('additionalDetail').value,
   };
 
   google.script.run
