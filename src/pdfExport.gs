@@ -467,23 +467,11 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
         var originalSize = stampBlob.getBytes().length;
         console.log('電子印Blob取得成功: size=' + originalSize);
 
-        // 大きな画像はサムネイルAPIで縮小（200px幅）
-        if (originalSize > 100000) {
-          try {
-            var thumbUrl = 'https://lh3.googleusercontent.com/d/' + stampFileId + '=w200';
-            var thumbRes = UrlFetchApp.fetch(thumbUrl, {
-              headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-              muteHttpExceptions: true,
-            });
-            if (thumbRes.getResponseCode() === 200) {
-              stampBlob = thumbRes.getBlob().setName('stamp.png');
-              console.log('電子印サムネイル取得成功: size=' + stampBlob.getBytes().length);
-            } else {
-              console.warn('サムネイル取得失敗(HTTP ' + thumbRes.getResponseCode() + ')、元画像を使用');
-            }
-          } catch (thumbErr) {
-            console.warn('サムネイル取得エラー、元画像を使用: ' + thumbErr.message);
-          }
+        // GAS insertImageの上限: 2MB / 100万ピクセル
+        // 大きな画像はサムネイルを取得して縮小
+        if (originalSize > 1500000) {
+          stampBlob = getResizedStampBlob_(stampFileId, stampBlob);
+          console.log('リサイズ後Blob: size=' + stampBlob.getBytes().length);
         }
 
         // SpreadsheetApp.flush() で先にシート構築を確定
@@ -566,6 +554,75 @@ function pdfBuildReason_(data) {
     return data.leaveType;
   }
   return '―';
+}
+
+/**
+ * 大きな電子印画像を縮小して返す（2MB/100万ピクセル制限対策）
+ * 複数のサムネイルAPI URLを試行し、全て失敗したら一時Docを経由して縮小
+ */
+function getResizedStampBlob_(fileId, originalBlob) {
+  var token = ScriptApp.getOAuthToken();
+  var headers = { Authorization: 'Bearer ' + token };
+
+  // 方法1: Drive thumbnail API
+  var urls = [
+    'https://drive.google.com/thumbnail?id=' + fileId + '&sz=w200',
+    'https://lh3.googleusercontent.com/d/' + fileId + '=s200',
+  ];
+
+  for (var i = 0; i < urls.length; i++) {
+    try {
+      var res = UrlFetchApp.fetch(urls[i], {
+        headers: headers,
+        muteHttpExceptions: true,
+        followRedirects: true,
+      });
+      console.log('サムネイル試行' + (i+1) + ': HTTP ' + res.getResponseCode() + ', size=' + res.getBlob().getBytes().length + ', url=' + urls[i]);
+      if (res.getResponseCode() === 200) {
+        var blob = res.getBlob();
+        if (blob.getBytes().length > 1000 && blob.getBytes().length < 1500000) {
+          return blob.setName('stamp.png');
+        }
+      }
+    } catch (e) {
+      console.warn('サムネイル試行' + (i+1) + 'エラー: ' + e.message);
+    }
+  }
+
+  // 方法2: 一時Googleスライドに挿入→サムネイル取得→削除
+  try {
+    console.log('一時スライド方式でリサイズ試行');
+    var slide = SlidesApp.create('TMP_STAMP_RESIZE');
+    var page = slide.getSlides()[0];
+    var img = page.insertImage(originalBlob);
+    // アスペクト比を維持して200x200以内に
+    var w = img.getWidth();
+    var h = img.getHeight();
+    var scale = Math.min(200 / w, 200 / h, 1);
+    img.setWidth(w * scale).setHeight(h * scale);
+    slide.saveAndClose();
+
+    // スライドのサムネイルを取得
+    var slideFile = DriveApp.getFileById(slide.getId());
+    var thumbBlob = slideFile.getThumbnail();
+    slideFile.setTrashed(true);
+
+    if (thumbBlob && thumbBlob.getBytes().length > 500) {
+      console.log('スライドサムネイル取得成功: size=' + thumbBlob.getBytes().length);
+      return thumbBlob.setName('stamp.png');
+    }
+  } catch (slideErr) {
+    console.error('スライドリサイズエラー: ' + slideErr.message);
+    // 一時ファイルクリーンアップ
+    try {
+      var files = DriveApp.getFilesByName('TMP_STAMP_RESIZE');
+      while (files.hasNext()) files.next().setTrashed(true);
+    } catch (e) { /* ignore */ }
+  }
+
+  // 全方法失敗 → 元の画像をそのまま返す（insertImageでエラーになる可能性あり）
+  console.warn('全リサイズ方法失敗、元画像を使用');
+  return originalBlob;
 }
 
 /** サイン画像をDrive URLからシートに挿入 */
