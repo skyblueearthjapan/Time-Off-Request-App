@@ -595,10 +595,15 @@ function submitRequest() {
   google.script.run
     .withSuccessHandler(function(result) {
       if (result && result.ok) {
-        closeModal();
-        alert('申請が完了しました。\nREQ_ID: ' + result.reqId + '\n\nプレビュー画面で上長の承認を受けてください。');
-        // プレビューページへ遷移
-        window.top.location.href = APP_URL + '?page=preview&reqId=' + result.reqId;
+        var previewUrl = APP_URL + '?page=preview&reqId=' + result.reqId;
+        // モーダル内に申請完了メッセージとプレビューリンクを表示
+        document.querySelector('.step.active').innerHTML =
+          '<div style="text-align:center;padding:20px 0;">'
+          + '<div style="font-size:40px;margin-bottom:12px;">&#10004;</div>'
+          + '<div style="font-weight:900;font-size:18px;margin-bottom:8px;">申請が完了しました</div>'
+          + '<div style="color:var(--muted);font-size:13px;margin-bottom:20px;">REQ_ID: ' + result.reqId + '</div>'
+          + '<a href="' + previewUrl + '" target="_top" style="display:inline-block;padding:14px 32px;border-radius:12px;background:linear-gradient(135deg,#0ea5e9,#38bdf8);color:#fff;font-weight:800;font-size:16px;text-decoration:none;box-shadow:0 10px 22px rgba(14,165,233,.20);">プレビュー画面へ（承認依頼）</a>'
+          + '</div>';
       } else {
         alert('申請に失敗しました。');
         btn.disabled = false;
