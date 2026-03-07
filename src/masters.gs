@@ -210,6 +210,58 @@ function api_getLookupData() {
 }
 
 /**
+ * M_CALENDARから休日出勤日（振替元）の候補を返す（年度内の休日・祝日・土日）
+ * 振替休暇の「どの休日に出勤したか」を選ぶプルダウン用
+ */
+function api_getHolidayDays() {
+  var sh = getDb_().getSheetByName(SHEET.CALENDAR);
+  if (!sh || sh.getLastRow() < 2) return [];
+
+  var values = sh.getDataRange().getValues();
+  var H = values[0].map(function(h) { return normalize_(h); });
+  var dateIdx = H.indexOf('日付');
+  var kubunIdx = H.indexOf('区分');
+  if (dateIdx < 0 || kubunIdx < 0) return [];
+
+  // カレンダーから休日・祝日・出勤土曜を取得
+  var calMap = {};
+  for (var r = 1; r < values.length; r++) {
+    var d = values[r][dateIdx];
+    if (!d) continue;
+    if (!(d instanceof Date)) d = new Date(d);
+    if (isNaN(d.getTime())) continue;
+    var key = fmtDate_(d);
+    calMap[key] = normalize_(values[r][kubunIdx]);
+  }
+
+  // 年度範囲を算出（年度初め〜今日）
+  var today = new Date();
+  var fy = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
+  var startDate = new Date(fy, 3, 1); // 4/1
+
+  var result = [];
+  var cursor = new Date(startDate);
+  while (cursor <= today) {
+    var key = fmtDate_(cursor);
+    var dow = cursor.getDay();
+    var kubun = calMap[key] || '';
+
+    // 休日・祝日・通常の土日（出勤土曜は除く＝出勤扱い）
+    if (kubun === '休日' || kubun === '祝日') {
+      result.push({ date: key, label: kubun });
+    } else if (kubun === '出勤土曜') {
+      // 出勤土曜は勤務日なので休日候補に含めない
+    } else if (dow === 0 || dow === 6) {
+      // 通常の土日
+      result.push({ date: key, label: dow === 0 ? '日曜' : '土曜' });
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}
+
+/**
  * M_CALENDARから勤務日一覧を返す（今日〜年度末）
  * 勤務日 = 平日(月〜金)で祝日でない日 + 出勤土曜
  */

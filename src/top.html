@@ -208,8 +208,11 @@
       <!-- Step5: 振替元出勤日（振替休暇の場合） -->
       <div class="step" data-step="5">
         <div class="form-group">
-          <label>振替元の出勤日を入力してください</label>
-          <input type="date" id="substituteDate">
+          <label>休日出勤した日を選択してください</label>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
+            振替元となる休日出勤日を選んでください
+          </div>
+          <select id="substituteDate"><option value="">読込中...</option></select>
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
@@ -349,6 +352,27 @@ window.addEventListener('DOMContentLoaded', function() {
     var sel = document.getElementById('leaveDate');
     sel.innerHTML = '<option value="">-- 取得エラー --</option>';
   }).api_getWorkingDays();
+
+  // 休日一覧ロード（振替元出勤日プルダウン用）
+  google.script.run.withSuccessHandler(function(holidays) {
+    var sel = document.getElementById('substituteDate');
+    sel.innerHTML = '<option value="">-- 休日出勤日を選択 --</option>';
+    var dayNames = ['日','月','火','水','木','金','土'];
+    (holidays || []).forEach(function(h) {
+      var opt = document.createElement('option');
+      opt.value = h.date;
+      var dt = new Date(h.date + 'T00:00:00');
+      var dow = dayNames[dt.getDay()];
+      opt.textContent = h.date + '（' + dow + '・' + h.label + '）';
+      if (dt.getDay() === 0) opt.style.color = '#ff5a5f';
+      if (dt.getDay() === 6) opt.style.color = '#0ea5e9';
+      sel.appendChild(opt);
+    });
+  }).withFailureHandler(function(err) {
+    console.error('休日一覧取得エラー:', err);
+    var sel = document.getElementById('substituteDate');
+    sel.innerHTML = '<option value="">-- 取得エラー --</option>';
+  }).api_getHolidayDays();
 });
 
 // ====== 部署選択 ======
@@ -445,7 +469,7 @@ function resetModal() {
   document.querySelector('.step[data-step="1"]').classList.add('active');
   document.querySelectorAll('input[type="radio"]').forEach(function(r) { r.checked = false; });
   document.getElementById('leaveDate').selectedIndex = 0;
-  document.getElementById('substituteDate').value = '';
+  document.getElementById('substituteDate').selectedIndex = 0;
   document.getElementById('specialReason').value = '';
   document.getElementById('paidDetail').value = '';
 }
