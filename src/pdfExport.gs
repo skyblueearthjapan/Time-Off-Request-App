@@ -43,7 +43,7 @@ function getOrCreateDateFolder_(rootFolderId, dateObj) {
 /**
  * サイン画像をDriveに保存
  */
-function saveSignImage_(reqId, base64Data) {
+function saveSignImage_(reqId, base64Data, leaveDate) {
   var settings = getSettings_();
   var rootFolderId = normalize_(settings['PDF_FOLDER_ID']);
   if (!rootFolderId) {
@@ -55,7 +55,9 @@ function saveSignImage_(reqId, base64Data) {
   var base64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
   var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'image/png', 'sign_' + reqId + '.png');
 
-  var folder = DriveApp.getFolderById(rootFolderId);
+  // PDFと同じ日付フォルダに保存
+  var dateObj = leaveDate instanceof Date ? leaveDate : (leaveDate ? new Date(leaveDate) : new Date());
+  var folder = getOrCreateDateFolder_(rootFolderId, dateObj);
   var file = folder.createFile(blob);
   return file.getUrl();
 }

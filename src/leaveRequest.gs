@@ -322,11 +322,12 @@ function api_approveLeaveRequest(reqId, signBase64) {
       }
     }
 
-    // 1. サイン画像をDriveに保存
+    // 1. サイン画像をDriveに保存（PDFと同じ日付フォルダ）
+    var leaveDate = values[targetRow - 2][idx['休暇日']];
     var signImageUrl = '';
     if (signBase64) {
       try {
-        signImageUrl = saveSignImage_(reqId, signBase64);
+        signImageUrl = saveSignImage_(reqId, signBase64, leaveDate);
       } catch (signErr) {
         console.error('サイン画像保存エラー（続行）: ' + signErr.message);
       }
