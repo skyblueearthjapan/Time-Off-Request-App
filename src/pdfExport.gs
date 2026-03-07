@@ -1,26 +1,4 @@
-// ====== PDF生成 ======
-
-/**
- * 休暇届PDFのセル位置マッピング（PDF_MAPシート準拠）
- * docs/休暇届アプリ_最強DBマスターガイド.md §4.1 参照
- */
-var LEAVE_PDF_MAP = {
-  LEAVE_START_REIWA_YEAR: 'B6',  // 開始：令和年（数値）
-  LEAVE_START_MONTH:      'E6',  // 開始：月
-  LEAVE_START_DAY:        'H6',  // 開始：日
-  LEAVE_START_WDAY:       'K6',  // 開始：曜日（例：月）
-  LEAVE_END_REIWA_YEAR:   'B7',  // 終了：令和年
-  LEAVE_END_MONTH:        'E7',  // 終了：月
-  LEAVE_END_DAY:          'H7',  // 終了：日
-  LEAVE_END_WDAY:         'K7',  // 終了：曜日
-  LEAVE_END_HOUR:         'M7',  // 終了：時
-  LEAVE_END_MIN:          'B8',  // 終了：分
-  LEAVE_REASON_SHORT:     'A14', // 理由（短文）
-  SUBMIT_REIWA_YEAR:      'J30', // 届出日：令和年
-  SUBMIT_MONTH:           'M30', // 届出日：月
-  SUBMIT_DAY:             'H31', // 届出日：日
-  WORKER_NAME:            'J34', // 氏名
-};
+// ====== PDF生成（テンプレートレス・動的構築方式） ======
 
 /**
  * 令和変換
@@ -28,8 +6,7 @@ var LEAVE_PDF_MAP = {
 function toReiwa_(dateObj) {
   if (!dateObj) return '';
   var d = dateObj instanceof Date ? dateObj : new Date(dateObj);
-  var year = d.getFullYear();
-  var reiwa = year - 2018;
+  var reiwa = d.getFullYear() - 2018;
   return '令和' + reiwa + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
 }
 
@@ -45,7 +22,7 @@ function getOrCreateDateFolder_(rootFolderId, dateObj) {
 }
 
 /**
- * サイン画像をDriveに保存
+ * サイン画像をDriveに保存（PDFと同じ日付フォルダ）
  */
 function saveSignImage_(reqId, base64Data, leaveDate) {
   var settings = getSettings_();
@@ -55,19 +32,32 @@ function saveSignImage_(reqId, base64Data, leaveDate) {
     return '';
   }
 
-  // Base64デコード（data:image/png;base64, 部分を除去）
   var base64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
   var blob = Utilities.newBlob(Utilities.base64Decode(base64), 'image/png', 'sign_' + reqId + '.png');
 
-  // PDFと同じ日付フォルダに保存
   var dateObj = leaveDate instanceof Date ? leaveDate : (leaveDate ? new Date(leaveDate) : new Date());
   var folder = getOrCreateDateFolder_(rootFolderId, dateObj);
   var file = folder.createFile(blob);
   return file.getUrl();
 }
 
+// ====== 色定義 ======
+var PDF_COLORS_ = {
+  TITLE_BG:   '#1a365d',
+  TITLE_FG:   '#ffffff',
+  LABEL_BG:   '#e8edf3',
+  LABEL_FG:   '#1a365d',
+  BORDER:     '#94a3b8',
+  SECTION_BG: '#f1f5f9',
+  TEXT:        '#1a202c',
+  MUTED:      '#718096',
+  ACCENT:     '#cc0000',
+};
+
+// ====== PDF生成メイン ======
+
 /**
- * 休暇届PDF生成（1件）
+ * 休暇届PDF生成（GASでシートを動的構築）
  */
 function generateLeavePdf_(reqId) {
   var reqData = api_getLeaveRequestById(reqId);
@@ -75,32 +65,24 @@ function generateLeavePdf_(reqId) {
 
   var settings = getSettings_();
   var rootFolderId = normalize_(settings['PDF_FOLDER_ID']);
-  var templateSsid = normalize_(settings['PDF_TEMPLATE_SSID']);
+  if (!rootFolderId) throw new Error('PDF_FOLDER_IDが未設定です。');
 
-  if (!rootFolderId) throw new Error('M_SYSTEM_SETTINGに PDF_FOLDER_ID が未設定です。');
-  if (!templateSsid) throw new Error('M_SYSTEM_SETTINGに PDF_TEMPLATE_SSID が未設定です。');
+  // ※ロックは呼び出し元（api_approveLeaveRequest）が保持済み。
+  //   GASスクリプトロックは再入不可のため、ここでは取得しない。
 
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  var tmpSs = null;
   try {
-    // テンプレSSをコピー
-    var templateFile = DriveApp.getFileById(templateSsid);
-    var tmpName = 'TMP_' + reqId + '_' + fmtDate_(new Date(), 'yyyyMMdd_HHmmss');
-    var tmpFile = templateFile.makeCopy(tmpName);
-    var tmpSs = SpreadsheetApp.openById(tmpFile.getId());
+    // 一時スプレッドシートを新規作成（テンプレートコピー不要）
+    tmpSs = SpreadsheetApp.create('TMP_PDF_' + reqId + '_' + fmtDate_(new Date(), 'yyyyMMdd_HHmmss'));
+    var sheet = tmpSs.getSheets()[0];
+    sheet.setName('休暇届');
 
-    // PDF_TEMPLATEシートを名前で取得
-    var formSheet = tmpSs.getSheetByName('PDF_TEMPLATE');
-    if (!formSheet) {
-      // フォールバック: シート名が異なる場合は最初のシートを試行
-      formSheet = tmpSs.getSheets()[0];
-      console.warn('PDF_TEMPLATEシートが見つからないため最初のシートを使用: ' + formSheet.getName());
-    }
-    fillLeaveTemplate_(formSheet, reqData);
+    // シート構築＋データ書込み
+    buildLeavePdfSheet_(sheet, reqData);
     SpreadsheetApp.flush();
 
     // 保存先フォルダ
-    var leaveDate = reqData.leaveDate instanceof Date ? reqData.leaveDate : new Date(reqData.leaveDate);
+    var leaveDate = new Date(reqData.leaveDate);
     var dateFolder = getOrCreateDateFolder_(rootFolderId, leaveDate);
 
     // ファイル名
@@ -110,13 +92,10 @@ function generateLeavePdf_(reqId) {
     var pdfName = ymd + '_' + safeDept + '_' + safeName + '_休暇届.pdf';
 
     // PDFエクスポート
-    var pdfBlob = exportSheetToPdfBlob_(tmpSs.getId(), formSheet.getSheetId(), pdfName);
+    var pdfBlob = exportSheetToPdfBlob_(tmpSs.getId(), sheet.getSheetId(), pdfName);
 
     // Drive保存
     var pdfFile = dateFolder.createFile(pdfBlob).setName(pdfName);
-
-    // 一時コピー削除
-    tmpFile.setTrashed(true);
 
     return {
       ok: true,
@@ -126,84 +105,368 @@ function generateLeavePdf_(reqId) {
       folderId: dateFolder.getId(),
     };
   } finally {
-    lock.releaseLock();
+    // 一時SSは成功・失敗問わず必ず削除
+    if (tmpSs) {
+      try { DriveApp.getFileById(tmpSs.getId()).setTrashed(true); }
+      catch (e) { console.error('一時SS削除エラー: ' + e.message); }
+    }
   }
 }
 
+// ====== シート構築 ======
+
 /**
- * テンプレートシートにデータ書込み（PDF_MAP準拠）
+ * 休暇届シートをゼロから構築しデータを書き込む
  */
-function fillLeaveTemplate_(sheet, data) {
+function buildLeavePdfSheet_(sheet, data) {
+  var C = PDF_COLORS_;
   var DOWS = ['日','月','火','水','木','金','土'];
 
-  // --- 休暇日（開始・終了） ---
-  if (data.leaveDate) {
-    var ld = data.leaveDate instanceof Date ? data.leaveDate : new Date(data.leaveDate);
-    var reiwaYear = ld.getFullYear() - 2018;
-    var month = ld.getMonth() + 1;
-    var day = ld.getDate();
-    var wday = DOWS[ld.getDay()];
+  // --- 列幅設定（A4縦に最適化） ---
+  sheet.setColumnWidth(1, 12);   // A: 左余白
+  sheet.setColumnWidth(2, 80);   // B: ラベル左
+  sheet.setColumnWidth(3, 80);   // C: ラベル右
+  sheet.setColumnWidth(4, 68);   // D: 値
+  sheet.setColumnWidth(5, 68);   // E: 値
+  sheet.setColumnWidth(6, 68);   // F: 値
+  sheet.setColumnWidth(7, 68);   // G: 値/ラベル
+  sheet.setColumnWidth(8, 68);   // H: 値
+  sheet.setColumnWidth(9, 68);   // I: 値
+  sheet.setColumnWidth(10, 12);  // J: 右余白
 
-    // 開始日（Row 6）
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_REIWA_YEAR).setValue(reiwaYear);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_MONTH).setValue(month);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_DAY).setValue(day);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_START_WDAY).setValue(wday);
+  // --- 全体フォント ---
+  sheet.getRange('A1:J35').setFontFamily('Noto Sans JP, sans-serif')
+    .setFontColor(C.TEXT);
 
-    // 終了日（Row 7）- 全日休は同日、半日休も同日
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_REIWA_YEAR).setValue(reiwaYear);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MONTH).setValue(month);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_DAY).setValue(day);
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_WDAY).setValue(wday);
+  // ============================================================
+  //  ROW 1: 上余白
+  // ============================================================
+  sheet.setRowHeight(1, 12);
 
-    // 終了時刻（半日区分に応じて設定）
-    // 午前: 8:05～12:15、午後: 13:00～17:10、全日: 8:05～17:10
-    if (data.leaveKubun === '半日休') {
-      if (data.halfDayType === '午前') {
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(12);
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(15);
-      } else {
-        // 午後半休
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(10);
-      }
+  // ============================================================
+  //  ROW 2: タイトル「休 暇 届」
+  // ============================================================
+  sheet.setRowHeight(2, 52);
+  var titleR = sheet.getRange('B2:I2');
+  titleR.merge().setValue('休 暇 届')
+    .setFontSize(24).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground(C.TITLE_BG).setFontColor(C.TITLE_FG);
+
+  // ============================================================
+  //  ROW 3: スペーサー
+  // ============================================================
+  sheet.setRowHeight(3, 6);
+
+  // ============================================================
+  //  ROW 4: 届出日（右寄せ）
+  // ============================================================
+  sheet.setRowHeight(4, 22);
+  var sd = data.submittedAt ? new Date(data.submittedAt) : new Date();
+  var submitStr = '令和' + (sd.getFullYear() - 2018) + '年'
+    + (sd.getMonth() + 1) + '月' + sd.getDate() + '日 届出';
+  sheet.getRange('F4:I4').merge().setValue(submitStr)
+    .setFontSize(10).setHorizontalAlignment('right');
+
+  // ============================================================
+  //  ROW 5: スペーサー
+  // ============================================================
+  sheet.setRowHeight(5, 6);
+
+  // ============================================================
+  //  ROW 6: 所属部署
+  // ============================================================
+  sheet.setRowHeight(6, 32);
+  pdfLabel_(sheet, 'B6:C6', '所 属 部 署', C);
+  pdfValue_(sheet, 'D6:I6', data.deptName || '');
+  pdfBorder_(sheet, 'B6:I6', C);
+
+  // ============================================================
+  //  ROW 7: 氏名
+  // ============================================================
+  sheet.setRowHeight(7, 32);
+  pdfLabel_(sheet, 'B7:C7', '氏　　　名', C);
+  pdfValue_(sheet, 'D7:I7', data.workerName || '');
+  pdfBorder_(sheet, 'B7:I7', C);
+
+  // ============================================================
+  //  ROW 8: スペーサー + セクションライン
+  // ============================================================
+  sheet.setRowHeight(8, 14);
+  sheet.getRange('B8:I8').merge().setValue('届 出 内 容')
+    .setFontSize(9).setFontWeight('bold')
+    .setFontColor(C.LABEL_FG).setHorizontalAlignment('center')
+    .setVerticalAlignment('bottom');
+
+  // ============================================================
+  //  ROW 9: 休暇日
+  // ============================================================
+  sheet.setRowHeight(9, 34);
+  pdfLabel_(sheet, 'B9:C9', '休 暇 日', C);
+  var ld = new Date(data.leaveDate);
+  var leaveDateStr = '令和' + (ld.getFullYear() - 2018) + '年'
+    + (ld.getMonth() + 1) + '月' + ld.getDate() + '日'
+    + '（' + DOWS[ld.getDay()] + '曜日）';
+  pdfValue_(sheet, 'D9:I9', leaveDateStr);
+  pdfBorder_(sheet, 'B9:I9', C);
+
+  // ============================================================
+  //  ROW 10: 休暇時間帯
+  // ============================================================
+  sheet.setRowHeight(10, 34);
+  pdfLabel_(sheet, 'B10:C10', '休 暇 時 間', C);
+  var timeStr = '';
+  if (data.leaveKubun === '半日休') {
+    if (data.halfDayType === '午前') {
+      timeStr = '午前半休　8:05 ～ 12:15';
     } else {
-      // 全日休
-      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
-      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(10);
+      timeStr = '午後半休　13:00 ～ 17:10';
+    }
+  } else {
+    timeStr = '終日　8:05 ～ 17:10';
+  }
+  pdfValue_(sheet, 'D10:I10', timeStr);
+  pdfBorder_(sheet, 'B10:I10', C);
+
+  // ============================================================
+  //  ROW 11: 休暇区分
+  // ============================================================
+  sheet.setRowHeight(11, 32);
+  pdfLabel_(sheet, 'B11:C11', '休 暇 区 分', C);
+  var kubunStr = data.leaveKubun || '';
+  if (data.halfDayType) kubunStr += '（' + data.halfDayType + '）';
+  pdfValue_(sheet, 'D11:I11', kubunStr);
+  pdfBorder_(sheet, 'B11:I11', C);
+
+  // ============================================================
+  //  ROW 12: 休暇種類
+  // ============================================================
+  sheet.setRowHeight(12, 32);
+  pdfLabel_(sheet, 'B12:C12', '休 暇 種 類', C);
+  pdfValue_(sheet, 'D12:I12', data.leaveType || '');
+  pdfBorder_(sheet, 'B12:I12', C);
+
+  // ============================================================
+  //  ROW 13: 振替元出勤日
+  // ============================================================
+  sheet.setRowHeight(13, 32);
+  pdfLabel_(sheet, 'B13:C13', '振替元出勤日', C);
+  var subStr = '―';
+  if (data.leaveType === '振替休暇' && data.substituteDate) {
+    var subD = new Date(data.substituteDate);
+    subStr = '令和' + (subD.getFullYear() - 2018) + '年'
+      + (subD.getMonth() + 1) + '月' + subD.getDate() + '日'
+      + '（' + DOWS[subD.getDay()] + '）';
+  }
+  pdfValue_(sheet, 'D13:I13', subStr);
+  pdfBorder_(sheet, 'B13:I13', C);
+
+  // ============================================================
+  //  ROW 14-15: 理由・詳細（2行分）
+  // ============================================================
+  sheet.setRowHeight(14, 25);
+  sheet.setRowHeight(15, 25);
+  pdfLabel_(sheet, 'B14:C15', '理由・詳細', C);
+  var reason = pdfBuildReason_(data);
+  sheet.getRange('D14:I15').merge().setValue(reason)
+    .setFontSize(11).setVerticalAlignment('top').setWrap(true);
+  pdfBorder_(sheet, 'B14:I15', C);
+
+  // ============================================================
+  //  ROW 16: スペーサー
+  // ============================================================
+  sheet.setRowHeight(16, 10);
+
+  // ============================================================
+  //  ROW 17: 宣言文
+  // ============================================================
+  sheet.setRowHeight(17, 30);
+  sheet.getRange('B17:I17').merge()
+    .setValue('上記のとおり休暇を届け出いたします。')
+    .setFontSize(11).setHorizontalAlignment('center')
+    .setVerticalAlignment('middle');
+
+  // ============================================================
+  //  ROW 18: スペーサー
+  // ============================================================
+  sheet.setRowHeight(18, 8);
+
+  // ============================================================
+  //  ROW 19-20: 届出者 + サイン
+  // ============================================================
+  sheet.setRowHeight(19, 28);
+  sheet.setRowHeight(20, 28);
+  pdfLabel_(sheet, 'B19:C20', '届 出 者', C);
+  sheet.getRange('D19:D20').merge().setValue('氏名')
+    .setFontSize(9).setHorizontalAlignment('center')
+    .setVerticalAlignment('middle').setFontColor(C.MUTED);
+  sheet.getRange('E19:F20').merge().setValue(data.workerName || '')
+    .setFontSize(12).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sheet.getRange('G19:G20').merge().setValue('印')
+    .setFontSize(9).setHorizontalAlignment('center')
+    .setVerticalAlignment('middle').setFontColor(C.MUTED);
+  sheet.getRange('H19:I20').merge().setValue('')
+    .setBackground('#fefefe');
+  pdfBorder_(sheet, 'B19:I20', C);
+
+  // ============================================================
+  //  ROW 21: スペーサー
+  // ============================================================
+  sheet.setRowHeight(21, 12);
+
+  // ============================================================
+  //  ROW 22: 承認欄ヘッダー
+  // ============================================================
+  sheet.setRowHeight(22, 26);
+  sheet.getRange('B22:I22').merge()
+    .setValue('承 認 欄')
+    .setFontSize(10).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground(C.SECTION_BG).setFontColor(C.LABEL_FG);
+  pdfBorder_(sheet, 'B22:I22', C);
+
+  // ============================================================
+  //  ROW 23: 承認者ラベル
+  // ============================================================
+  sheet.setRowHeight(23, 24);
+  sheet.getRange('B23:C23').merge().setValue('')
+    .setBackground(C.LABEL_BG);
+  sheet.getRange('D23:F23').merge().setValue('部　長')
+    .setFontSize(10).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground(C.SECTION_BG);
+  sheet.getRange('G23:I23').merge().setValue('所 属 長')
+    .setFontSize(10).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground(C.SECTION_BG);
+  pdfBorder_(sheet, 'B23:I23', C);
+
+  // ============================================================
+  //  ROW 24-27: 承認印エリア
+  // ============================================================
+  sheet.setRowHeight(24, 20);
+  sheet.setRowHeight(25, 20);
+  sheet.setRowHeight(26, 20);
+  sheet.setRowHeight(27, 20);
+  sheet.getRange('B24:C27').merge().setValue('承認印')
+    .setFontSize(9).setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setBackground(C.LABEL_BG).setFontColor(C.LABEL_FG);
+  sheet.getRange('D24:F27').merge().setValue('');
+  sheet.getRange('G24:I27').merge().setValue('');
+  pdfBorder_(sheet, 'B24:I27', C);
+
+  // ============================================================
+  //  ROW 28: 承認日
+  // ============================================================
+  sheet.setRowHeight(28, 24);
+  sheet.getRange('B28:C28').merge().setValue('承認日')
+    .setFontSize(9).setHorizontalAlignment('center')
+    .setVerticalAlignment('middle')
+    .setBackground(C.LABEL_BG).setFontColor(C.LABEL_FG);
+  var approvedStr = '';
+  if (data.approvedAt) {
+    var ad = new Date(data.approvedAt);
+    approvedStr = (ad.getFullYear() - 2018) + '/' + (ad.getMonth() + 1) + '/' + ad.getDate();
+  }
+  sheet.getRange('D28:F28').merge().setValue(approvedStr)
+    .setFontSize(9).setHorizontalAlignment('center');
+  sheet.getRange('G28:I28').merge().setValue('')
+    .setFontSize(9).setHorizontalAlignment('center');
+  pdfBorder_(sheet, 'B28:I28', C);
+
+  // ============================================================
+  //  ROW 29: フッター注記
+  // ============================================================
+  sheet.setRowHeight(29, 6);
+  sheet.setRowHeight(30, 18);
+  sheet.getRange('B30:I30').merge()
+    .setValue('※後報の場合は、理由を詳しく記載すること。')
+    .setFontSize(8).setFontColor(C.MUTED);
+
+  // ============================================================
+  //  サイン画像挿入
+  // ============================================================
+  if (data.signImageUrl) {
+    try {
+      pdfInsertSign_(sheet, data.signImageUrl, 24, 4, 140, 70);
+    } catch (e) {
+      console.error('サイン画像挿入エラー: ' + e.message);
     }
   }
 
-  // --- 理由（短文） ---
-  var reason = '';
-  if (data.leaveType === '特別休暇' && data.specialReason) {
-    reason = data.specialReason;
-  } else if (data.leaveType === '有給消化（私用）' && data.paidDetail) {
-    reason = data.paidDetail;
-  } else if (data.leaveType === '振替休暇' && data.substituteDate) {
-    var subD = data.substituteDate instanceof Date ? data.substituteDate : new Date(data.substituteDate);
-    reason = '振替（出勤日: ' + fmtDate_(subD, 'yyyy/MM/dd') + '）';
-  } else if (data.leaveType) {
-    reason = data.leaveType;
+  // --- 印刷範囲外の列を非表示 ---
+  if (sheet.getMaxColumns() > 10) {
+    sheet.hideColumns(11, sheet.getMaxColumns() - 10);
   }
-  if (data.additionalDetail) {
-    reason += (reason ? ' ' : '') + data.additionalDetail;
+  if (sheet.getMaxRows() > 30) {
+    sheet.hideRows(31, sheet.getMaxRows() - 30);
   }
-  if (reason) {
-    sheet.getRange(LEAVE_PDF_MAP.LEAVE_REASON_SHORT).setValue(reason);
-  }
-
-  // --- 届出日（令和） ---
-  if (data.submittedAt) {
-    var sd = data.submittedAt instanceof Date ? data.submittedAt : new Date(data.submittedAt);
-    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_REIWA_YEAR).setValue(sd.getFullYear() - 2018);
-    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_MONTH).setValue(sd.getMonth() + 1);
-    sheet.getRange(LEAVE_PDF_MAP.SUBMIT_DAY).setValue(sd.getDate());
-  }
-
-  // --- 氏名 ---
-  sheet.getRange(LEAVE_PDF_MAP.WORKER_NAME).setValue(data.workerName || '');
 }
+
+// ====== ヘルパー関数 ======
+
+/** ラベルセル（背景色+太字+中央揃え） */
+function pdfLabel_(sheet, rangeStr, text, C) {
+  sheet.getRange(rangeStr).merge().setValue(text)
+    .setFontSize(10).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground(C.LABEL_BG).setFontColor(C.LABEL_FG);
+}
+
+/** 値セル（左揃え） */
+function pdfValue_(sheet, rangeStr, text) {
+  sheet.getRange(rangeStr).merge().setValue(text)
+    .setFontSize(11).setVerticalAlignment('middle')
+    .setHorizontalAlignment('left');
+}
+
+/** 外枠+内部罫線 */
+function pdfBorder_(sheet, rangeStr, C) {
+  sheet.getRange(rangeStr).setBorder(
+    true, true, true, true, true, true,
+    C.BORDER, SpreadsheetApp.BorderStyle.SOLID
+  );
+}
+
+/** 理由テキスト構築 */
+function pdfBuildReason_(data) {
+  var parts = [];
+  if (data.leaveType === '特別休暇' && data.specialReason) {
+    parts.push(data.specialReason);
+  } else if (data.leaveType === '有給消化（私用）') {
+    parts.push(data.paidDetail || '私用のため');
+  } else if (data.leaveType === '振替休暇') {
+    parts.push('振替休暇');
+  } else if (data.leaveType) {
+    parts.push(data.leaveType);
+  }
+  if (data.additionalDetail) parts.push(data.additionalDetail);
+  return parts.join('\n') || '―';
+}
+
+/** サイン画像をDrive URLからシートに挿入 */
+function pdfInsertSign_(sheet, imageUrl, row, col, width, height) {
+  var fileId = '';
+  var match = imageUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+  if (match) fileId = match[1];
+  if (!fileId) {
+    match = imageUrl.match(/id=([a-zA-Z0-9_-]+)/);
+    if (match) fileId = match[1];
+  }
+  if (!fileId) {
+    console.warn('サイン画像URLからファイルIDを抽出できません: ' + imageUrl);
+    return;
+  }
+
+  var blob = DriveApp.getFileById(fileId).getBlob();
+  var img = sheet.insertImage(blob, col, row);
+  if (width) img.setWidth(width);
+  if (height) img.setHeight(height);
+}
+
+// ====== PDFエクスポート ======
 
 /**
  * シート1枚をPDF化するユーティリティ
@@ -215,6 +478,7 @@ function exportSheetToPdfBlob_(spreadsheetId, sheetId, filename) {
     + '&portrait=true'
     + '&size=A4'
     + '&fitw=true'
+    + '&top_margin=0.4&bottom_margin=0.4&left_margin=0.4&right_margin=0.4'
     + '&sheetnames=false&printtitle=false'
     + '&pagenumbers=false'
     + '&gridlines=false'
