@@ -63,6 +63,7 @@ function onOpen() {
     .addSeparator()
     .addItem('マスタ同期（手動実行）', 'syncAllMasters')
     .addItem('カレンダー同期（手動実行）', 'syncCalendarMaster')
+    .addItem('スタンプ同期（手動実行）', 'syncStampMaster')
     .addItem('サマリー再構築', 'rebuildLeaveSummary')
     .addSeparator()
     .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails')
@@ -183,7 +184,21 @@ function setupAllSheets() {
     skipped.push('M_LOOKUP（既存）');
   }
 
-  // ---------- 5. T_LEAVE_REQUEST ----------
+  // ---------- 5. M_STAMP ----------
+  var stampSh = ensureSheet_(ss, 'M_STAMP');
+  if (stampSh.getLastRow() < 1) {
+    var stampHeader = [['メール', 'stampFileId', '備考']];
+    stampSh.getRange(1, 1, 1, 3).setValues(stampHeader);
+    formatHeaderRow_(stampSh);
+    stampSh.setColumnWidth(1, 250);
+    stampSh.setColumnWidth(2, 300);
+    stampSh.setColumnWidth(3, 200);
+    created.push('M_STAMP');
+  } else {
+    skipped.push('M_STAMP（既存）');
+  }
+
+  // ---------- 6. T_LEAVE_REQUEST ----------
   var reqSh = ensureSheet_(ss, 'T_LEAVE_REQUEST');
   if (reqSh.getLastRow() < 1) {
     var reqHeader = [[
@@ -200,7 +215,7 @@ function setupAllSheets() {
     skipped.push('T_LEAVE_REQUEST（既存）');
   }
 
-  // ---------- 6. V_LEAVE_SUMMARY ----------
+  // ---------- 7. V_LEAVE_SUMMARY ----------
   var sumSh = ensureSheet_(ss, 'V_LEAVE_SUMMARY');
   if (sumSh.getLastRow() < 1) {
     var sumHeader = [[
@@ -216,7 +231,7 @@ function setupAllSheets() {
     skipped.push('V_LEAVE_SUMMARY（既存）');
   }
 
-  // ---------- 7. BatchLogs ----------
+  // ---------- 8. BatchLogs ----------
   var logSh = ensureSheet_(ss, 'BatchLogs');
   if (logSh.getLastRow() < 1) {
     var logHeader = [['実行日時', 'バッチ名', '対象日', '成功', 'スキップ', '失敗', 'エラー詳細']];

@@ -9,6 +9,7 @@ const SHEET = {
   LEAVE_SUMMARY: 'V_LEAVE_SUMMARY',
   BATCH_LOGS: 'BatchLogs',
   CALENDAR: 'M_CALENDAR',
+  STAMP: 'M_STAMP',
 };
 
 const STATUS = {

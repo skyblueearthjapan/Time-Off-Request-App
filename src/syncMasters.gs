@@ -89,6 +89,14 @@ function syncAllMasters() {
       log.push('ERROR M_CALENDAR: ' + calErr.message);
     }
 
+    // スタンプマスタも同期（別ソースSS）
+    try {
+      syncStampMaster();
+      log.push('OK StampMap -> M_STAMP');
+    } catch (stampErr) {
+      log.push('ERROR M_STAMP: ' + stampErr.message);
+    }
+
     var summary = 'syncAllMasters:\n' + log.join('\n');
     Logger.log(summary);
     console.log(summary);
@@ -146,6 +154,48 @@ function syncCalendarMaster() {
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * スタンプマスタを外部スプレッドシート → M_STAMP へ同期（全置換）。
+ * 外部SS（残業・休日出勤申請app）の StampMap シートから取得
+ */
+function syncStampMaster() {
+  var settings = getSettings_();
+  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
+  if (!sourceId) {
+    sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
+  }
+
+  var srcSS = SpreadsheetApp.openById(sourceId);
+  var srcSh = srcSS.getSheetByName('StampMap');
+  if (!srcSh) throw new Error('元シートなし: StampMap');
+
+  var data = readSheetData_(srcSh);
+  if (!data || !data.length) throw new Error('StampMapが空です');
+
+  data = compactRows_(data);
+
+  // M_STAMPシートがなければ作成
+  var dstSS = getDb_();
+  var dstSh = dstSS.getSheetByName(SHEET.STAMP);
+  if (!dstSh) {
+    dstSh = dstSS.insertSheet(SHEET.STAMP);
+  }
+
+  try {
+    replaceMasterData_(dstSh, data);
+  } catch (writeErr) {
+    console.warn('replaceMasterData_ failed for M_STAMP, recreating: ' + writeErr.message);
+    dstSS.deleteSheet(dstSh);
+    dstSh = dstSS.insertSheet(SHEET.STAMP);
+    dstSh.getRange(1, 1, data.length, data[0].length).setValues(data);
+  }
+
+  SpreadsheetApp.flush();
+  var msg = 'syncStampMaster: OK (' + data.length + ' rows)';
+  Logger.log(msg);
+  console.log(msg);
 }
 
 // ====== ヘッダ行の実データ末尾から最終列を検出 ======

@@ -117,22 +117,22 @@ function api_getWorkerInfo() {
 
 /**
  * メールアドレスから電子印のDriveファイルIDを取得
- * 外部SS（残業・休日出勤申請app）の StampMap シートを参照
+ * ローカル M_STAMP シートを参照（syncStampMaster で同期済み）
  */
 function getStampFileId_(email) {
   if (!email) return '';
   email = email.toLowerCase().trim();
 
-  var settings = getSettings_();
-  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
-  if (!sourceId) sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
-
   try {
-    var ss = SpreadsheetApp.openById(sourceId);
-    var sh = ss.getSheetByName('StampMap');
-    if (!sh || sh.getLastRow() < 2) return '';
+    var ss = getDb_();
+    var sh = ss.getSheetByName(SHEET.STAMP);
+    if (!sh || sh.getLastRow() < 2) {
+      console.warn('M_STAMPシートが空です。syncStampMaster を実行してください。');
+      return '';
+    }
 
     var data = sh.getDataRange().getValues();
+    // ヘッダ: メール | stampFileId | 備考
     for (var r = 1; r < data.length; r++) {
       var rowEmail = String(data[r][0] || '').toLowerCase().trim();
       if (rowEmail === email) {
@@ -140,23 +140,23 @@ function getStampFileId_(email) {
       }
     }
   } catch (e) {
-    console.error('StampMap読取エラー: ' + e.message);
+    console.error('M_STAMP読取エラー: ' + e.message);
   }
   return '';
 }
 
 /**
- * 承認者一覧を返す（StampMapから取得、sign.htmlのドロップダウン用）
+ * 承認者一覧を返す（ローカル M_STAMP から取得、sign.htmlのドロップダウン用）
+ * syncStampMaster で同期済みのローカルシートを参照
  */
 function api_getApproverList() {
-  var settings = getSettings_();
-  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
-  if (!sourceId) sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
-
   try {
-    var ss = SpreadsheetApp.openById(sourceId);
-    var sh = ss.getSheetByName('StampMap');
-    if (!sh || sh.getLastRow() < 2) return [];
+    var ss = getDb_();
+    var sh = ss.getSheetByName(SHEET.STAMP);
+    if (!sh || sh.getLastRow() < 2) {
+      console.warn('M_STAMPシートが空です。syncStampMaster を実行してください。');
+      return [];
+    }
 
     var data = sh.getDataRange().getValues();
     var list = [];
