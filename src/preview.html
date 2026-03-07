@@ -174,10 +174,12 @@ function renderPreview(d) {
   document.getElementById('contentWrap').innerHTML = html;
   document.getElementById('actionBar').style.display = '';
 
-  // 承認済の場合は承認ボタンを非表示
+  // 承認済の場合は承認ボタンを非表示にし、TOPに戻るボタンのみ表示
   if (d.status === '承認済') {
     document.getElementById('approveBtn').style.display = 'none';
   }
+  // 常にTOPに戻れるようにする
+  document.getElementById('backBtn').textContent = 'TOPに戻る';
 }
 
 document.getElementById('backBtn').addEventListener('click', function() {
