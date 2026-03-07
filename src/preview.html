@@ -84,6 +84,7 @@
 <script>
 var REQ_ID = '<?= REQ_ID ?>';
 var APP_URL = '<?= APP_URL ?>';
+var AUTO_REDIRECT = <?= AUTO_REDIRECT ?>;
 var reqData = null;
 
 window.addEventListener('DOMContentLoaded', function() {
@@ -174,12 +175,24 @@ function renderPreview(d) {
   document.getElementById('contentWrap').innerHTML = html;
   document.getElementById('actionBar').style.display = '';
 
-  // 承認済の場合は承認ボタンを非表示にし、TOPに戻るボタンのみ表示
+  // 承認済の場合は承認ボタンを非表示
   if (d.status === '承認済') {
     document.getElementById('approveBtn').style.display = 'none';
+    // 承認直後の自動遷移: 3秒間プレビュー表示後にTOPへ
+    if (AUTO_REDIRECT && APP_URL) {
+      var topUrl = APP_URL + '?page=top';
+      var meta = document.createElement('meta');
+      meta.httpEquiv = 'refresh';
+      meta.content = '3;url=' + topUrl;
+      document.head.appendChild(meta);
+      document.getElementById('backBtn').textContent = '3秒後にTOPへ戻ります...';
+      document.getElementById('backBtn').disabled = true;
+    }
   }
   // 常にTOPに戻れるようにする
-  document.getElementById('backBtn').textContent = 'TOPに戻る';
+  if (!AUTO_REDIRECT) {
+    document.getElementById('backBtn').textContent = 'TOPに戻る';
+  }
 }
 
 document.getElementById('backBtn').addEventListener('click', function() {

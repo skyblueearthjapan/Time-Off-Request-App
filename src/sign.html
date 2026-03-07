@@ -159,13 +159,13 @@ function doApprove() {
         btn.style.display = 'none';
         document.querySelector('.btn-clear').style.display = 'none';
         document.querySelector('.btn-back').style.display = 'none';
-        var topUrl = APP_URL + '?page=top';
-        // meta refreshで自動遷移（GASサンドボックス回避）
+        // 承認済プレビューへ遷移（meta refreshでサンドボックス回避）
+        var previewUrl = APP_URL + '?page=preview&reqId=' + REQ_ID + '&approved=1';
         var meta = document.createElement('meta');
         meta.httpEquiv = 'refresh';
-        meta.content = '2;url=' + topUrl;
+        meta.content = '1;url=' + previewUrl;
         document.head.appendChild(meta);
-        msg.innerHTML = '承認が完了しました。<br>2秒後にTOPページへ戻ります...<br><a href="' + topUrl + '" target="_top" style="font-size:13px;color:#0ea5e9;">自動で切り替わらない場合はこちら</a>';
+        msg.innerHTML = '承認が完了しました。<br>承認済プレビューを表示します...<br><a href="' + previewUrl + '" target="_top" style="font-size:13px;color:#0ea5e9;">自動で切り替わらない場合はこちら</a>';
       } else {
         msg.textContent = '承認に失敗しました。';
         msg.className = 'status-msg error';
