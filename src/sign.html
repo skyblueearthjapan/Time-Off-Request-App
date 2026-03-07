@@ -250,6 +250,8 @@ function doApprove() {
     signBase64 = canvas.toDataURL('image/png');
   }
 
+  console.log('承認実行: reqId=' + REQ_ID + ', approverEmail=' + selectedApprover + ', hasStamp=' + hasStamp + ', signBase64.length=' + signBase64.length);
+
   google.script.run
     .withSuccessHandler(function(result) {
       console.log('approve result:', result);

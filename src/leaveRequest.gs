@@ -294,7 +294,7 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
   if (!reqId) throw new Error('REQ_IDが指定されていません。');
 
   var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
+  lock.waitLock(60000);
   try {
     var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
     var sh = info.sh;
@@ -342,9 +342,11 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
     SpreadsheetApp.flush();
 
     // 3. PDF生成（承認者メールを渡す）
+    console.log('=== PDF生成開始 === reqId=' + reqId + ', approverEmail=' + approverEmail + ' (type=' + typeof approverEmail + ')');
     var pdfResult = null;
     try {
       pdfResult = generateLeavePdf_(reqId, approverEmail);
+      console.log('PDF生成結果: ' + JSON.stringify(pdfResult));
       if (pdfResult && pdfResult.ok) {
         if (idx['PDF_URL'] !== undefined) {
           sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
@@ -354,7 +356,7 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
         }
       }
     } catch (pdfErr) {
-      console.error('PDF生成エラー（続行）: ' + pdfErr.message);
+      console.error('PDF生成エラー（続行）: ' + pdfErr.message + '\n' + pdfErr.stack);
     }
 
     // 4. サマリー再構築
