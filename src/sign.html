@@ -163,6 +163,12 @@ window.addEventListener('DOMContentLoaded', function() {
       approverList = list || [];
       var sel = document.getElementById('approverSelect');
       sel.innerHTML = '<option value="">-- 承認者を選択 --</option>';
+      // 手書きサインの選択肢を先頭に追加
+      var handOpt = document.createElement('option');
+      handOpt.value = '__handwrite__';
+      handOpt.textContent = '✍ 手書きサイン（電子印なし）';
+      sel.appendChild(handOpt);
+      // 電子印登録者を追加
       for (var i = 0; i < approverList.length; i++) {
         var opt = document.createElement('option');
         opt.value = approverList[i].email;
@@ -194,8 +200,20 @@ function onApproverChange() {
     return;
   }
 
+  if (email === '__handwrite__') {
+    // 手書きサイン選択
+    selectedApprover = '';
+    hasStamp = false;
+    statusEl.innerHTML = '<span class="stamp-badge no-stamp">手書きサイン</span>';
+    signArea.style.display = 'block';
+    document.querySelector('.sign-area-label').textContent = '下の枠内にサインを書いてください';
+    btn.disabled = false;
+    clearCanvas();
+    return;
+  }
+
   selectedApprover = email;
-  // StampMapに登録されている = 電子印あり（リストに載っている時点で登録済み）
+  // StampMapに登録されている = 電子印あり
   hasStamp = true;
   statusEl.innerHTML = '<span class="stamp-badge has-stamp">電子印あり</span>';
   signArea.style.display = 'none';
@@ -208,7 +226,8 @@ function goBack() {
 }
 
 function doApprove() {
-  if (!selectedApprover) {
+  var selVal = document.getElementById('approverSelect').value;
+  if (!selVal) {
     alert('承認者を選択してください。');
     return;
   }
