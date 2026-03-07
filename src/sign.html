@@ -155,17 +155,12 @@ function doApprove() {
     .withSuccessHandler(function(result) {
       console.log('approve result:', result, 'APP_URL=[' + APP_URL + ']');
       if (result && result.ok) {
-        msg.textContent = '承認が完了しました。TOPページに戻ります...';
         msg.className = 'status-msg success';
-        btn.textContent = '承認済';
         var topUrl = APP_URL ? APP_URL + '?page=top' : '';
-        if (topUrl) {
-          setTimeout(function() {
-            window.top.location.href = topUrl;
-          }, 2000);
-        } else {
-          msg.textContent = '承認が完了しました。（APP_URL未設定のため自動遷移できません）';
-        }
+        msg.innerHTML = '承認が完了しました。<br><a href="' + topUrl + '" target="_top" style="display:inline-block;margin-top:10px;padding:10px 24px;border-radius:12px;background:linear-gradient(135deg,#1f9d55,#1bd67f);color:#fff;font-weight:800;text-decoration:none;font-size:15px;">TOPに戻る</a>';
+        btn.style.display = 'none';
+        document.querySelector('.btn-clear').style.display = 'none';
+        document.querySelector('.btn-back').style.display = 'none';
       } else {
         msg.textContent = '承認に失敗しました。';
         msg.className = 'status-msg error';
