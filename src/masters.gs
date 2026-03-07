@@ -113,6 +113,38 @@ function api_getWorkerInfo() {
   return null;
 }
 
+// ====== 電子印マスタ（StampMap） ======
+
+/**
+ * メールアドレスから電子印のDriveファイルIDを取得
+ * 外部SS（残業・休日出勤申請app）の StampMap シートを参照
+ */
+function getStampFileId_(email) {
+  if (!email) return '';
+  email = email.toLowerCase().trim();
+
+  var settings = getSettings_();
+  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
+  if (!sourceId) sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
+
+  try {
+    var ss = SpreadsheetApp.openById(sourceId);
+    var sh = ss.getSheetByName('StampMap');
+    if (!sh || sh.getLastRow() < 2) return '';
+
+    var data = sh.getDataRange().getValues();
+    for (var r = 1; r < data.length; r++) {
+      var rowEmail = String(data[r][0] || '').toLowerCase().trim();
+      if (rowEmail === email) {
+        return String(data[r][1] || '').trim();
+      }
+    }
+  } catch (e) {
+    console.error('StampMap読取エラー: ' + e.message);
+  }
+  return '';
+}
+
 // ====== API（google.script.run用） ======
 
 function api_getDeptList() {

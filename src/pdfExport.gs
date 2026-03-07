@@ -308,7 +308,7 @@ function buildLeavePdfSheet_(sheet, data) {
   sheet.setRowHeight(18, 8);
 
   // ============================================================
-  //  ROW 19-20: 届出者 + サイン
+  //  ROW 19-20: 届出者（印なし）
   // ============================================================
   sheet.setRowHeight(19, 28);
   sheet.setRowHeight(20, 28);
@@ -316,14 +316,9 @@ function buildLeavePdfSheet_(sheet, data) {
   sheet.getRange('D19:D20').merge().setValue('氏名')
     .setFontSize(9).setHorizontalAlignment('center')
     .setVerticalAlignment('middle').setFontColor(C.MUTED);
-  sheet.getRange('E19:F20').merge().setValue(data.workerName || '')
+  sheet.getRange('E19:I20').merge().setValue(data.workerName || '')
     .setFontSize(12).setFontWeight('bold')
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
-  sheet.getRange('G19:G20').merge().setValue('印')
-    .setFontSize(9).setHorizontalAlignment('center')
-    .setVerticalAlignment('middle').setFontColor(C.MUTED);
-  sheet.getRange('H19:I20').merge().setValue('')
-    .setBackground('#fefefe');
   pdfBorder_(sheet, 'B19:I20', C);
 
   // ============================================================
@@ -402,11 +397,30 @@ function buildLeavePdfSheet_(sheet, data) {
     .setFontSize(8).setFontColor(C.MUTED);
 
   // ============================================================
-  //  サイン画像挿入
+  //  承認印挿入（所属長欄: G24）
   // ============================================================
-  if (data.signImageUrl) {
+  // 1. 電子印（StampMapから承認者のメールで検索）
+  var approverStampInserted = false;
+  try {
+    var approverEmail = Session.getActiveUser().getEmail();
+    if (approverEmail) {
+      var stampFileId = getStampFileId_(approverEmail);
+      if (stampFileId) {
+        var stampBlob = DriveApp.getFileById(stampFileId).getBlob();
+        var stampImg = sheet.insertImage(stampBlob, 7, 24); // G24
+        stampImg.setWidth(120);
+        stampImg.setHeight(70);
+        approverStampInserted = true;
+      }
+    }
+  } catch (e) {
+    console.error('電子印挿入エラー: ' + e.message);
+  }
+
+  // 2. 手書きサイン（電子印がない場合のフォールバック）
+  if (!approverStampInserted && data.signImageUrl) {
     try {
-      pdfInsertSign_(sheet, data.signImageUrl, 24, 4, 140, 70);
+      pdfInsertSign_(sheet, data.signImageUrl, 24, 7, 120, 70); // G24
     } catch (e) {
       console.error('サイン画像挿入エラー: ' + e.message);
     }
