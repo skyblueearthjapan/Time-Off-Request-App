@@ -84,7 +84,6 @@
 <script>
 var REQ_ID = '<?= REQ_ID ?>';
 var APP_URL = '<?= APP_URL ?>';
-var AUTO_REDIRECT = <?= AUTO_REDIRECT ?>;
 var reqData = null;
 
 window.addEventListener('DOMContentLoaded', function() {
@@ -175,21 +174,19 @@ function renderPreview(d) {
   document.getElementById('contentWrap').innerHTML = html;
   document.getElementById('actionBar').style.display = '';
 
-  // 承認済の場合は承認ボタンを非表示
+  // 承認済の場合は承認ボタンを非表示、TOPに戻るボタンを強調表示
   if (d.status === '承認済') {
     document.getElementById('approveBtn').style.display = 'none';
-    if (AUTO_REDIRECT && APP_URL) {
-      document.getElementById('backBtn').textContent = '4秒後にTOPへ戻ります...';
-      document.getElementById('backBtn').disabled = true;
-      // iframe自身をTOP URLへ遷移させる（GASがtop-levelに反映）
-      setTimeout(function() {
-        try { window.top.location.href = APP_URL + '?page=top'; } catch(e) {}
-        // フォールバック: iframe自身を遷移
-        window.location.href = APP_URL + '?page=top';
-      }, 4000);
-    }
-  }
-  if (!AUTO_REDIRECT) {
+    var backBtn = document.getElementById('backBtn');
+    backBtn.textContent = 'TOPに戻る';
+    backBtn.style.background = 'linear-gradient(135deg,#1f9d55,#1bd67f)';
+    backBtn.style.color = '#fff';
+    backBtn.style.fontWeight = '800';
+    backBtn.style.fontSize = '16px';
+    backBtn.style.padding = '14px 32px';
+    backBtn.style.boxShadow = '0 10px 22px rgba(31,157,85,.20)';
+    backBtn.style.border = '0';
+  } else {
     document.getElementById('backBtn').textContent = 'TOPに戻る';
   }
 }

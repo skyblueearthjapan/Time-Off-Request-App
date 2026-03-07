@@ -28,7 +28,6 @@ function doGet(e) {
       prevTpl.REQ_ID = (e && e.parameter && e.parameter.reqId) ? e.parameter.reqId : '';
       prevTpl.APP_URL = appUrl;
       prevTpl.PORTAL_URL = portalUrl;
-      prevTpl.AUTO_REDIRECT = (e && e.parameter && e.parameter.approved === '1') ? true : false;
       return prevTpl.evaluate()
         .setTitle('休暇届 プレビュー')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
