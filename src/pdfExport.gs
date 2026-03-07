@@ -139,9 +139,11 @@ function generateLeavePdf_(reqId, approverEmail) {
     var sheet = tmpSs.getSheets()[0];
     sheet.setName('休暇届');
 
-    // シート構築＋データ書込み
+    // シート構築＋データ書込み（画像挿入含む）
     buildLeavePdfSheet_(sheet, reqData, approverEmail);
     SpreadsheetApp.flush();
+    // 画像がシートに反映されるまで待機（大きな画像の場合特に重要）
+    Utilities.sleep(2000);
 
     // 保存先フォルダ
     var leaveDate = new Date(reqData.leaveDate);
@@ -462,16 +464,38 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
         var stampFile = DriveApp.getFileById(stampFileId);
         console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ')');
         var stampBlob = stampFile.getBlob();
-        console.log('電子印Blob取得成功: size=' + stampBlob.getBytes().length);
+        var originalSize = stampBlob.getBytes().length;
+        console.log('電子印Blob取得成功: size=' + originalSize);
+
+        // 大きな画像はサムネイルAPIで縮小（200px幅）
+        if (originalSize > 100000) {
+          try {
+            var thumbUrl = 'https://lh3.googleusercontent.com/d/' + stampFileId + '=w200';
+            var thumbRes = UrlFetchApp.fetch(thumbUrl, {
+              headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+              muteHttpExceptions: true,
+            });
+            if (thumbRes.getResponseCode() === 200) {
+              stampBlob = thumbRes.getBlob().setName('stamp.png');
+              console.log('電子印サムネイル取得成功: size=' + stampBlob.getBytes().length);
+            } else {
+              console.warn('サムネイル取得失敗(HTTP ' + thumbRes.getResponseCode() + ')、元画像を使用');
+            }
+          } catch (thumbErr) {
+            console.warn('サムネイル取得エラー、元画像を使用: ' + thumbErr.message);
+          }
+        }
 
         // SpreadsheetApp.flush() で先にシート構築を確定
         SpreadsheetApp.flush();
-        Utilities.sleep(500);
+        Utilities.sleep(1000);
 
         // insertImage(blob, column, row, offsetX, offsetY) で明示的に位置指定
-        var stampImg = sheet.insertImage(stampBlob, 7, 24, 0, 0);
+        var stampImg = sheet.insertImage(stampBlob, 7, 24, 5, 5);
         stampImg.setWidth(120);
         stampImg.setHeight(70);
+        SpreadsheetApp.flush();
+        Utilities.sleep(500);
         approverStampInserted = true;
         console.log('電子印挿入成功: G24 (col=7, row=24)');
       } else {
