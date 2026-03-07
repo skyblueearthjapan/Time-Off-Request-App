@@ -152,19 +152,20 @@ function fillLeaveTemplate_(sheet, data) {
     sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_WDAY).setValue(wday);
 
     // 終了時刻（半日区分に応じて設定）
+    // 午前: 8:05～12:15、午後: 13:00～17:10、全日: 8:05～17:10
     if (data.leaveKubun === '半日休') {
       if (data.halfDayType === '午前') {
         sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(12);
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(15);
       } else {
         // 午後半休
         sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
-        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+        sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(10);
       }
     } else {
       // 全日休
       sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_HOUR).setValue(17);
-      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue('05');
+      sheet.getRange(LEAVE_PDF_MAP.LEAVE_END_MIN).setValue(10);
     }
   }
 
