@@ -122,23 +122,34 @@ function api_getWorkerInfo() {
 function getStampFileId_(email) {
   if (!email) return '';
   email = email.toLowerCase().trim();
+  console.log('getStampFileId_: 検索メール=' + email);
 
   try {
     var ss = getDb_();
     var sh = ss.getSheetByName(SHEET.STAMP);
-    if (!sh || sh.getLastRow() < 2) {
-      console.warn('M_STAMPシートが空です。syncStampMaster を実行してください。');
+    if (!sh) {
+      console.warn('M_STAMPシートが存在しません。setupAllSheets → syncStampMaster を実行してください。');
+      return '';
+    }
+    var lastRow = sh.getLastRow();
+    console.log('M_STAMP lastRow=' + lastRow);
+    if (lastRow < 2) {
+      console.warn('M_STAMPシートが空です（ヘッダのみ）。syncStampMaster を実行してください。');
       return '';
     }
 
     var data = sh.getDataRange().getValues();
     // ヘッダ: メール | stampFileId | 備考
+    console.log('M_STAMPヘッダ: ' + data[0].join(' | '));
     for (var r = 1; r < data.length; r++) {
       var rowEmail = String(data[r][0] || '').toLowerCase().trim();
+      var rowStampId = String(data[r][1] || '').trim();
       if (rowEmail === email) {
-        return String(data[r][1] || '').trim();
+        console.log('M_STAMP一致: row=' + (r+1) + ', stampFileId=' + rowStampId);
+        return rowStampId;
       }
     }
+    console.warn('M_STAMPに該当メールなし: ' + email + ' (全' + (data.length - 1) + '件検索済)');
   } catch (e) {
     console.error('M_STAMP読取エラー: ' + e.message);
   }

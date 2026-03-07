@@ -18,6 +18,51 @@ function test_generatePdf() {
 }
 
 /**
+ * 電子印取得テスト（GASエディタから実行）
+ * M_STAMPの同期状態とスタンプファイルの存在確認
+ */
+function test_stampLookup() {
+  var testEmail = 'imaizumi@lineworks-local.info'; // ← テスト対象メール
+  console.log('=== 電子印テスト開始 ===');
+
+  // 1. M_STAMPシート確認
+  var ss = getDb_();
+  var sh = ss.getSheetByName(SHEET.STAMP);
+  if (!sh) {
+    console.error('M_STAMPシートが存在しません！ setupAllSheets を実行してください。');
+    return;
+  }
+  var lastRow = sh.getLastRow();
+  console.log('M_STAMP: ' + lastRow + ' 行（ヘッダ含む）');
+  if (lastRow >= 2) {
+    var data = sh.getDataRange().getValues();
+    console.log('ヘッダ: ' + data[0].join(' | '));
+    for (var r = 1; r < data.length; r++) {
+      console.log('  行' + (r+1) + ': ' + data[r][0] + ' → ' + data[r][1] + ' (' + data[r][2] + ')');
+    }
+  }
+
+  // 2. スタンプFileId取得
+  var stampFileId = getStampFileId_(testEmail);
+  console.log('取得結果: stampFileId=' + (stampFileId || '(空)'));
+
+  // 3. Driveファイル確認
+  if (stampFileId) {
+    try {
+      var file = DriveApp.getFileById(stampFileId);
+      console.log('Driveファイル: 名前=' + file.getName() + ', MIME=' + file.getMimeType() + ', サイズ=' + file.getSize());
+      var blob = file.getBlob();
+      console.log('Blob取得: type=' + blob.getContentType() + ', size=' + blob.getBytes().length);
+      console.log('=== 電子印テスト: OK ===');
+    } catch (e) {
+      console.error('Driveファイル取得エラー: ' + e.message);
+    }
+  } else {
+    console.warn('=== 電子印テスト: スタンプ未登録 ===');
+  }
+}
+
+/**
  * 令和変換
  */
 function toReiwa_(dateObj) {
@@ -400,31 +445,55 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
   // ============================================================
   //  承認印挿入（所属長欄: G24）
   // ============================================================
-  // 1. 電子印（StampMapから承認者のメールで検索）
+  // 1. 電子印（M_STAMPから承認者のメールで検索）
   var approverStampInserted = false;
   try {
-    var stampEmail = approverEmail || Session.getActiveUser().getEmail() || '';
+    var stampEmail = approverEmail || '';
+    if (!stampEmail) {
+      try { stampEmail = Session.getActiveUser().getEmail() || ''; } catch (e2) { /* ignore */ }
+    }
+    console.log('電子印検索: approverEmail=' + approverEmail + ', stampEmail=' + stampEmail);
+
     if (stampEmail) {
       var stampFileId = getStampFileId_(stampEmail);
+      console.log('電子印FileId: ' + stampFileId);
+
       if (stampFileId) {
-        var stampBlob = DriveApp.getFileById(stampFileId).getBlob();
-        var stampImg = sheet.insertImage(stampBlob, 7, 24); // G24
+        var stampFile = DriveApp.getFileById(stampFileId);
+        console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ')');
+        var stampBlob = stampFile.getBlob();
+        console.log('電子印Blob取得成功: size=' + stampBlob.getBytes().length);
+
+        // SpreadsheetApp.flush() で先にシート構築を確定
+        SpreadsheetApp.flush();
+        Utilities.sleep(500);
+
+        // insertImage(blob, column, row, offsetX, offsetY) で明示的に位置指定
+        var stampImg = sheet.insertImage(stampBlob, 7, 24, 0, 0);
         stampImg.setWidth(120);
         stampImg.setHeight(70);
         approverStampInserted = true;
+        console.log('電子印挿入成功: G24 (col=7, row=24)');
+      } else {
+        console.warn('電子印FileIdが空です。M_STAMPにメール=' + stampEmail + 'の登録があるか確認してください。');
       }
     }
   } catch (e) {
-    console.error('電子印挿入エラー: ' + e.message);
+    console.error('電子印挿入エラー: ' + e.message + '\n' + e.stack);
   }
 
   // 2. 手書きサイン（電子印がない場合のフォールバック）
   if (!approverStampInserted && data.signImageUrl) {
     try {
+      console.log('手書きサイン挿入: URL=' + data.signImageUrl);
       pdfInsertSign_(sheet, data.signImageUrl, 24, 7, 120, 70); // G24
     } catch (e) {
       console.error('サイン画像挿入エラー: ' + e.message);
     }
+  }
+
+  if (!approverStampInserted && !data.signImageUrl) {
+    console.warn('承認印なし: 電子印もサイン画像もありません');
   }
 
   // --- 印刷範囲外の列を非表示 ---
