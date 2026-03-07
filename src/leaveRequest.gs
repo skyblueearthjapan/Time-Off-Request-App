@@ -167,28 +167,30 @@ function api_getLeaveRequestById(reqId) {
       var cellReqId = normalize_(row[reqIdCol]);
       if (cellReqId === reqId) {
         console.log('FOUND at row ' + (i + 2));
-        return {
+        var result = {
           reqId: cellReqId,
-          fiscalYear: row[idx['年度']],
+          fiscalYear: String(row[idx['年度']] || ''),
           deptId: normalize_(row[idx['部署ID']]),
           deptName: normalize_(row[idx['部署名']]),
           workerId: normalize_(row[idx['作業員ID']]),
           workerName: normalize_(row[idx['作業員名']]),
           leaveKubun: normalize_(row[idx['休暇区分']]),
           halfDayType: normalize_(row[idx['半日区分']]),
-          leaveDate: row[idx['休暇日']],
+          leaveDate: row[idx['休暇日']] instanceof Date ? fmtDate_(row[idx['休暇日']]) : String(row[idx['休暇日']] || ''),
           leaveType: normalize_(row[idx['休暇種類']]),
-          substituteDate: row[idx['振替元出勤日']],
+          substituteDate: row[idx['振替元出勤日']] instanceof Date ? fmtDate_(row[idx['振替元出勤日']]) : String(row[idx['振替元出勤日']] || ''),
           specialReason: normalize_(row[idx['特別理由']]),
           paidDetail: normalize_(row[idx['有給詳細']]),
           additionalDetail: normalize_(row[idx['追加詳細']]),
-          submittedAt: row[idx['申請日時']],
-          approvedAt: row[idx['承認日時']],
+          submittedAt: row[idx['申請日時']] instanceof Date ? fmtDate_(row[idx['申請日時']], 'yyyy-MM-dd HH:mm:ss') : String(row[idx['申請日時']] || ''),
+          approvedAt: row[idx['承認日時']] instanceof Date ? fmtDate_(row[idx['承認日時']], 'yyyy-MM-dd HH:mm:ss') : String(row[idx['承認日時']] || ''),
           status: normalize_(row[idx['承認状態']]),
           signImageUrl: normalize_(row[idx['サイン画像URL']]),
           pdfUrl: normalize_(row[idx['PDF_URL']]),
           rowNo: i + 2,
         };
+        console.log('返却データ: ' + JSON.stringify(result));
+        return result;
       }
     }
   }

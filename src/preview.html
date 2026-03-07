@@ -92,16 +92,24 @@ window.addEventListener('DOMContentLoaded', function() {
     return;
   }
 
+  console.log('preview: calling api_getLeaveRequestById with REQ_ID=' + REQ_ID);
   google.script.run
     .withSuccessHandler(function(data) {
+      console.log('preview: success handler called, data=', data, ', type=' + typeof data);
       if (!data) {
-        document.getElementById('loadingMsg').textContent = '申請データが見つかりません。（REQ_ID: ' + REQ_ID + '）\nGASエディタの実行ログを確認してください。';
+        document.getElementById('loadingMsg').textContent = '申請データが見つかりません。（REQ_ID: ' + REQ_ID + '）';
         return;
       }
       reqData = data;
-      renderPreview(data);
+      try {
+        renderPreview(data);
+      } catch (renderErr) {
+        console.error('preview: renderPreview error:', renderErr);
+        document.getElementById('loadingMsg').textContent = '表示エラー: ' + renderErr.message;
+      }
     })
     .withFailureHandler(function(err) {
+      console.error('preview: failure handler called:', err);
       document.getElementById('loadingMsg').textContent = 'エラー: ' + err.message;
     })
     .api_getLeaveRequestById(REQ_ID);
