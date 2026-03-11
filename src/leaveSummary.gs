@@ -388,7 +388,7 @@ function buildAdminViewData_(depts, fyYear) {
         specialCount: sum.specialCount,
         totalCount: sum.totalCount,
         lastPaidDate: sum.lastPaidDate,
-        warnLevel: sum.warnLevel,
+        warnLevel: computeWarnLevel_(sum.paidCount, fy),
         quarters: quarters,
       });
     }
