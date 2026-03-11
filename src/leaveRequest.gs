@@ -432,6 +432,14 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
     }
 
     SpreadsheetApp.flush();
+
+    // 6. 台帳更新
+    try {
+      updateLedger_(reqId);
+    } catch (ledgerErr) {
+      console.error('台帳更新エラー: ' + ledgerErr.message);
+    }
+
     return { ok: true, reqId: reqId };
   } finally {
     lock.releaseLock();
@@ -582,6 +590,14 @@ function api_approveLeaveRequest2(reqId, approver2Email) {
     }
 
     SpreadsheetApp.flush();
+
+    // 台帳更新（2次承認者情報を反映）
+    try {
+      updateLedger_(reqId);
+    } catch (ledgerErr) {
+      console.error('台帳更新エラー: ' + ledgerErr.message);
+    }
+
     return { ok: true, reqId: reqId };
   } finally {
     lock.releaseLock();
@@ -688,6 +704,13 @@ function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
       }
     } catch (pdfErr) {
       console.error('バッチPDF再生成エラー（続行）: reqId=' + t.reqId + ' ' + pdfErr.message);
+    }
+
+    // 台帳更新
+    try {
+      updateLedger_(t.reqId);
+    } catch (ledgerErr) {
+      console.error('バッチ台帳更新エラー（続行）: reqId=' + t.reqId + ' ' + ledgerErr.message);
     }
   }
 

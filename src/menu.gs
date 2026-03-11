@@ -127,6 +127,7 @@ function setupAllSheets() {
     ['MASTER_SOURCE_WORKER_SHEET', '作業員マスタ', '同期元の作業員シート名'],
     ['CALENDAR_SOURCE_SSID', '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ', '社内カレンダー同期元SS（残業・休日出勤申請app）'],
     ['CALENDAR_SOURCE_SHEET', '社内カレンダーマスタ', '同期元の社内カレンダーシート名'],
+    ['LEDGER_SSID', '', '総務確認用台帳SSID（自動生成・変更不要）'],
   ];
   if (settingSh.getLastRow() < 1) {
     // 新規: ヘッダ + 全KEY
