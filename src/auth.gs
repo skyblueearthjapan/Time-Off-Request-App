@@ -178,3 +178,26 @@ function api_getApproverProfiles() {
     };
   }
 }
+
+/**
+ * ログインユーザーのメールと名前を返す（2次承認者自動取得用）
+ * M_STAMPの備考列から名前を取得
+ * @return {Object} { email, name }
+ */
+function api_getCurrentApproverInfo() {
+  var email = Session.getActiveUser().getEmail().toLowerCase();
+  var name = email;
+  try {
+    var stampSh = getDb_().getSheetByName(SHEET.STAMP);
+    if (stampSh) {
+      var data = stampSh.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (normalize_(String(data[i][0] || '')).toLowerCase() === email) {
+          name = normalize_(String(data[i][2] || '')) || email;
+          break;
+        }
+      }
+    }
+  } catch (e) { /* ignore */ }
+  return { email: email, name: name };
+}

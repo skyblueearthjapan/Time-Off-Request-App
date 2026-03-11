@@ -106,13 +106,10 @@
         <span class="pill info" id="pending2Count">読込中...</span>
       </div>
 
-      <!-- 2次承認者選択 -->
+      <!-- 2次承認者表示 -->
       <div style="margin-bottom:10px;">
-        <label style="font-weight:700;font-size:13px;">2次承認者（電子印）：</label>
-        <select class="approver2-select" id="approver2Select">
-          <option value="">読込中...</option>
-        </select>
-        <span id="stamp2Status" style="font-size:12px;margin-left:8px;"></span>
+        <label style="font-weight:700;font-size:13px;">2次承認者：</label>
+        <span id="approver2Name" style="font-size:13px;">読込中...</span>
       </div>
 
       <!-- 一括操作バー -->
@@ -197,8 +194,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
   document.getElementById('deptFilter').addEventListener('change', function() { loadData(); });
 
-  // 2次承認者リスト読込
-  loadApprover2List();
+  // 2次承認者（ログインユーザー）取得
+  loadApprover2Info();
 
   // 2次承認待ち読込
   loadPending2();
@@ -207,30 +204,17 @@ window.addEventListener('DOMContentLoaded', function() {
   loadData();
 });
 
-// ====== 2次承認者ドロップダウン ======
-function loadApprover2List() {
-  google.script.run.withSuccessHandler(function(list) {
-    var sel = document.getElementById('approver2Select');
-    sel.innerHTML = '<option value="">-- 2次承認者を選択 --</option>';
-    for (var i = 0; i < list.length; i++) {
-      var opt = document.createElement('option');
-      opt.value = list[i].email;
-      opt.textContent = list[i].name + '（' + list[i].email + '）';
-      sel.appendChild(opt);
-    }
-    sel.onchange = function() {
-      selectedApprover2 = sel.value;
-      var status = document.getElementById('stamp2Status');
-      if (sel.value) {
-        status.innerHTML = '<span style="color:#1f9d55;font-weight:700;">電子印あり</span>';
-      } else {
-        status.innerHTML = '';
-      }
-      updateBatchBtn();
-    };
+// ====== 2次承認者（ログインユーザー自動取得） ======
+function loadApprover2Info() {
+  google.script.run.withSuccessHandler(function(info) {
+    // info = { email, name }
+    selectedApprover2 = info.email;
+    var display = document.getElementById('approver2Name');
+    display.innerHTML = '<strong>' + escHtml(info.name) + '</strong>（' + escHtml(info.email) + '）';
+    updateBatchBtn();
   }).withFailureHandler(function(err) {
-    document.getElementById('approver2Select').innerHTML = '<option value="">エラー: ' + err.message + '</option>';
-  }).api_getApproverList();
+    document.getElementById('approver2Name').textContent = 'エラー: ' + err.message;
+  }).api_getCurrentApproverInfo();
 }
 
 // ====== 2次承認待ち一覧 ======
