@@ -630,19 +630,11 @@ function getResizedStampBlob_(fileId, originalBlob) {
 function createTmpStampForImageFormula_(stampFileId) {
   try {
     var stampFile = DriveApp.getFileById(stampFileId);
-    console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ')');
-    var stampBlob = stampFile.getBlob();
-    var originalSize = stampBlob.getBytes().length;
-    console.log('電子印Blob取得成功: size=' + originalSize);
+    console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ', size=' + stampFile.getSize() + ')');
 
-    // 大きな画像はサムネイルで縮小
-    if (originalSize > 1500000) {
-      stampBlob = getResizedStampBlob_(stampFileId, stampBlob);
-      console.log('リサイズ後Blob: size=' + stampBlob.getBytes().length);
-    }
-
-    // 一時ファイルを作成し「リンクを知っている全員」に公開
-    var tmpFile = DriveApp.createFile(stampBlob.setName('tmp_stamp_' + stampFileId + '.png'));
+    // makeCopy() でDriveファイルを直接コピー（blob不要、サイズ制限なし）
+    // IMAGE()数式はブラウザ/Sheets側で描画するため2MB制限の影響を受けない
+    var tmpFile = stampFile.makeCopy('tmp_stamp_' + stampFileId);
     tmpFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
     console.log('一時スタンプファイル作成: id=' + tmpFile.getId());
     return tmpFile.getId();
