@@ -541,7 +541,8 @@ function api_approveLeaveRequest2(reqId, approver2Email) {
 }
 
 /**
- * 2次承認一括実行（シート読込を1回に最適化）
+ * 2次承認一括実行（シート読込・ロック・スタンプ名を1回で処理）
+ * PDF再生成はロック解放後に行い、タイムアウトを防止
  * @param {string[]} reqIds - 申請IDの配列
  * @param {string} approver2Email - 2次承認者メール
  * @return {Object} { ok: boolean, results: [...] }
@@ -551,16 +552,96 @@ function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
   if (!reqIds || !reqIds.length) throw new Error('申請IDが指定されていません');
   if (reqIds.length > 20) throw new Error('一度に承認できるのは20件までです');
 
-  var results = [];
-  // 1件ずつ処理（各呼び出しでロック取得→解放）
-  // PDF再生成があるため件数上限を20件に制限（GAS 6分制限対策）
-  for (var i = 0; i < reqIds.length; i++) {
+  // 2次承認者名を1回だけ取得
+  var approver2Name = approver2Email || '';
+  if (approver2Email) {
     try {
-      api_approveLeaveRequest2(reqIds[i], approver2Email);
-      results.push({ reqId: reqIds[i], ok: true });
-    } catch (e) {
-      results.push({ reqId: reqIds[i], ok: false, error: e.message });
+      var stampSh = getDb_().getSheetByName(SHEET.STAMP);
+      if (stampSh) {
+        var stampData = stampSh.getDataRange().getValues();
+        for (var s = 1; s < stampData.length; s++) {
+          if (normalize_(String(stampData[s][0] || '')).toLowerCase() === approver2Email.toLowerCase()) {
+            approver2Name = normalize_(String(stampData[s][2] || '')) || approver2Email;
+            break;
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  var now = new Date();
+  var pdfTargets = []; // PDF再生成用の情報を収集
+  var results = [];
+
+  // ロック内でシート書き込みのみ（高速）
+  var lock = LockService.getScriptLock();
+  lock.waitLock(60000);
+  try {
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error('申請データがありません。');
+
+    var readCols = Math.max(info.header.length, sh.getLastColumn());
+    var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
+
+    // reqId→行番号マップ作成
+    var reqIdToRow = {};
+    for (var i = 0; i < values.length; i++) {
+      var rid = normalize_(values[i][idx['REQ_ID']]);
+      if (rid) reqIdToRow[rid] = i;
+    }
+
+    for (var j = 0; j < reqIds.length; j++) {
+      var reqId = reqIds[j];
+      try {
+        var rowIdx = reqIdToRow[reqId];
+        if (rowIdx === undefined) throw new Error('申請が見つかりません');
+        var targetRow = rowIdx + 2;
+        var status = normalize_(values[rowIdx][idx['承認状態']]);
+        if (status !== STATUS.APPROVED) throw new Error('1次承認されていない申請です');
+
+        // 2次承認情報を書き込み
+        if (idx['APPROVED_BY2'] !== undefined) sh.getRange(targetRow, idx['APPROVED_BY2'] + 1).setValue(approver2Name);
+        if (idx['APPROVED_BY2_EMAIL'] !== undefined) sh.getRange(targetRow, idx['APPROVED_BY2_EMAIL'] + 1).setValue(approver2Email);
+        if (idx['APPROVED_AT2'] !== undefined) sh.getRange(targetRow, idx['APPROVED_AT2'] + 1).setValue(now);
+
+        // PDF再生成用の情報を収集
+        var approver1Email = '';
+        var a1Col = idx['APPROVED_BY1_EMAIL'];
+        if (a1Col !== undefined) approver1Email = normalize_(values[rowIdx][a1Col]);
+        var oldPdfId = idx['PDF_FILE_ID'] !== undefined ? normalize_(values[rowIdx][idx['PDF_FILE_ID']]) : '';
+
+        pdfTargets.push({ reqId: reqId, targetRow: targetRow, approver1Email: approver1Email, oldPdfId: oldPdfId });
+        results.push({ reqId: reqId, ok: true });
+      } catch (e) {
+        results.push({ reqId: reqId, ok: false, error: e.message });
+      }
+    }
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+
+  // ロック解放後にPDF再生成（時間がかかる処理）
+  for (var p = 0; p < pdfTargets.length; p++) {
+    var t = pdfTargets[p];
+    try {
+      // 既存PDFをゴミ箱へ
+      if (t.oldPdfId) {
+        try { DriveApp.getFileById(t.oldPdfId).setTrashed(true); } catch (e) { /* skip */ }
+      }
+      var pdfResult = generateLeavePdf_(t.reqId, t.approver1Email, approver2Email);
+      if (pdfResult && pdfResult.ok) {
+        var info2 = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+        if (info2.idx['PDF_URL'] !== undefined) info2.sh.getRange(t.targetRow, info2.idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
+        if (info2.idx['PDF_FILE_ID'] !== undefined) info2.sh.getRange(t.targetRow, info2.idx['PDF_FILE_ID'] + 1).setValue(pdfResult.pdfFileId || '');
+      }
+    } catch (pdfErr) {
+      console.error('バッチPDF再生成エラー（続行）: reqId=' + t.reqId + ' ' + pdfErr.message);
     }
   }
+
   return { ok: true, results: results };
 }
