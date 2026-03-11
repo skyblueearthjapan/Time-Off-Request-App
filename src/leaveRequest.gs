@@ -291,6 +291,53 @@ function api_getUpcomingLeaves(deptId, workerId) {
 }
 
 /**
+ * 全員の申請中一覧（日付制限なし・フィルタなし）
+ * TOP画面の「承認待ち一覧」セクション用
+ */
+function api_getAllPendingRequests() {
+  var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+  var sh = info.sh;
+  var idx = info.idx;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+
+  var readCols = Math.max(info.header.length, sh.getLastColumn());
+  var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
+  var out = [];
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var rowReqId = normalize_(row[idx['REQ_ID']]);
+    if (!rowReqId) continue;
+
+    var status = normalize_(row[idx['承認状態']]);
+    if (status !== STATUS.SUBMITTED) continue;
+
+    var leaveDate = row[idx['休暇日']];
+    var submittedAt = row[idx['申請日時']];
+
+    out.push({
+      reqId: rowReqId,
+      deptName: normalize_(row[idx['部署名']]),
+      workerName: normalize_(row[idx['作業員名']]),
+      leaveKubun: normalize_(row[idx['休暇区分']]),
+      halfDayType: normalize_(row[idx['半日区分']]),
+      leaveDate: leaveDate instanceof Date ? fmtDate_(leaveDate, 'yyyy/MM/dd') : '',
+      leaveType: normalize_(row[idx['休暇種類']]),
+      submittedAt: submittedAt instanceof Date ? fmtDate_(submittedAt, 'MM/dd HH:mm') : '',
+      status: status,
+    });
+  }
+
+  // 申請日時の新しい順（最新が上）
+  out.sort(function(a, b) {
+    return (b.submittedAt || '').localeCompare(a.submittedAt || '');
+  });
+
+  return out;
+}
+
+/**
  * 承認処理（sign.htmlから呼ばれる）
  * @param {string} reqId - 申請ID
  * @param {string} signBase64 - 手書きサインBase64（電子印がない場合のフォールバック）

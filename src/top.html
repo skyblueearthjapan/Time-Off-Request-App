@@ -138,6 +138,17 @@
     <!-- 申請ボタン -->
     <button class="big-btn" id="applyBtn" onclick="openModal()" disabled>休暇届を申請する</button>
 
+    <!-- 承認待ち一覧 -->
+    <div class="card" id="pendingCard" style="border:2px solid var(--accent2);">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">
+        承認待ち一覧
+        <span id="pendingCount" style="font-size:13px;font-weight:700;color:var(--accent2);margin-left:8px;"></span>
+      </div>
+      <div id="pendingWrap">
+        <div class="loading">読み込み中...</div>
+      </div>
+    </div>
+
     <!-- 本日の休暇者 -->
     <div class="card card-today" id="todaySectionCard" style="display:none;">
       <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">
@@ -340,6 +351,9 @@ window.addEventListener('DOMContentLoaded', function() {
     document.getElementById('deptSelect').innerHTML = '<option value="">-- 取得エラー --</option>';
     loadLeaveTable();
   }).api_getDeptList();
+
+  // 承認待ち一覧ロード
+  loadPendingRequests();
 
   // LOOKUPデータロード
   google.script.run.withSuccessHandler(function(data) {
@@ -687,6 +701,51 @@ function submitRequest() {
       btn.textContent = '申請する';
     })
     .api_submitLeaveRequest(data);
+}
+
+// ====== 承認待ち一覧 ======
+function loadPendingRequests() {
+  var wrap = document.getElementById('pendingWrap');
+  wrap.innerHTML = '<div class="loading">読み込み中...</div>';
+  google.script.run
+    .withSuccessHandler(function(items) {
+      if (!items || !items.length) {
+        document.getElementById('pendingCount').textContent = '0件';
+        wrap.innerHTML = '<div class="loading">承認待ちの申請はありません</div>';
+        return;
+      }
+      document.getElementById('pendingCount').textContent = items.length + '件';
+      var dayNames = ['日','月','火','水','木','金','土'];
+      var html = '<table><thead><tr><th>休暇日</th><th>部署</th><th>氏名</th><th>区分</th><th>種類</th><th>申請日時</th><th></th></tr></thead><tbody>';
+      items.forEach(function(it) {
+        // 曜日付き
+        var dateDisp = it.leaveDate;
+        if (it.leaveDate) {
+          var parts = it.leaveDate.split('/');
+          if (parts.length === 3) {
+            var dt = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+            dateDisp = it.leaveDate + '(' + dayNames[dt.getDay()] + ')';
+          }
+        }
+        html += '<tr>'
+          + '<td>' + dateDisp + '</td>'
+          + '<td>' + it.deptName + '</td>'
+          + '<td style="font-weight:700;">' + it.workerName + '</td>'
+          + '<td>' + it.leaveKubun + (it.halfDayType ? '(' + it.halfDayType + ')' : '') + '</td>'
+          + '<td>' + it.leaveType + '</td>'
+          + '<td style="font-size:12px;color:var(--muted);">' + (it.submittedAt || '') + '</td>'
+          + '<td><a href="' + APP_URL + '?page=preview&reqId=' + it.reqId + '" target="_top" class="btn-sm btn-blue" style="color:#fff;text-decoration:none;padding:6px 14px;border-radius:8px;display:inline-block;">承認プレビュー</a></td>'
+          + '</tr>';
+      });
+      html += '</tbody></table>';
+      wrap.innerHTML = html;
+    })
+    .withFailureHandler(function(err) {
+      console.error('承認待ち一覧取得エラー:', err);
+      wrap.innerHTML = '<div class="loading">取得エラー</div>';
+      document.getElementById('pendingCount').textContent = '';
+    })
+    .api_getAllPendingRequests();
 }
 </script>
 </body>
