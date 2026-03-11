@@ -134,12 +134,23 @@ function normalize_(s) {
 
 function buildHeaderIndex_(header) {
   var idx = {};
+  // 逆引きマップ（日本語→英語）を構築
+  var reverseAlias = {};
+  for (var key in HEADER_ALIAS_) {
+    if (HEADER_ALIAS_.hasOwnProperty(key)) {
+      reverseAlias[HEADER_ALIAS_[key]] = key;
+    }
+  }
   for (var i = 0; i < header.length; i++) {
     var h = header[i];
     idx[h] = i;
-    // エイリアスも登録（英語→日本語キーで参照可能に）
+    // 英語ヘッダー → 日本語エイリアスも登録
     if (HEADER_ALIAS_[h] && idx[HEADER_ALIAS_[h]] === undefined) {
       idx[HEADER_ALIAS_[h]] = i;
+    }
+    // 日本語ヘッダー → 英語エイリアスも登録
+    if (reverseAlias[h] && idx[reverseAlias[h]] === undefined) {
+      idx[reverseAlias[h]] = i;
     }
   }
   return idx;
