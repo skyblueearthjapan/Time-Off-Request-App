@@ -105,7 +105,7 @@ function buildWarnMailBody_(workers, fyYear, dateObj) {
   var lines = [];
   lines.push('【有給取得義務 未達者一覧】');
   lines.push('');
-  lines.push('年度: ' + fyYear + '年度（' + fyYear + '/4/1 - ' + (Number(fyYear) + 1) + '/3/31）');
+  lines.push('年度: ' + fyYear + '年度（' + fyYear + '/3/16 - ' + (Number(fyYear) + 1) + '/3/15）');
   lines.push('確認日: ' + fmtDate_(dateObj, 'yyyy/MM/dd'));
   lines.push('');
 
@@ -116,7 +116,7 @@ function buildWarnMailBody_(workers, fyYear, dateObj) {
   for (var i = 0; i < PAID_LEAVE_WARN.length; i++) {
     var w = PAID_LEAVE_WARN[i];
     var deadlineMonth = w.deadline.month;
-    var deadlineYear = deadlineMonth >= 4 ? Number(fyYear) : Number(fyYear) + 1;
+    var deadlineYear = (deadlineMonth > 3 || (deadlineMonth === 3 && w.deadline.day >= 16)) ? Number(fyYear) : Number(fyYear) + 1;
     var deadlineDate = new Date(deadlineYear, deadlineMonth - 1, w.deadline.day, 23, 59, 59);
     if (now > deadlineDate) {
       currentRequired = w.required;

@@ -242,8 +242,9 @@ function api_getHolidayDays() {
 
   // 年度範囲を算出（年度初め〜今日）
   var today = new Date();
-  var fy = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
-  var startDate = new Date(fy, 3, 1); // 4/1
+  var _m = today.getMonth() + 1, _d = today.getDate();
+  var fy = (_m < 3 || (_m === 3 && _d < 16)) ? today.getFullYear() - 1 : today.getFullYear();
+  var startDate = new Date(fy, 2, 16); // 3/16
 
   var result = [];
   var cursor = new Date(startDate);
@@ -285,8 +286,9 @@ function api_getHolidayDays() {
  */
 function getJapanesePublicHolidays_() {
   var today = new Date();
-  var fy = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
-  // 年度内に含まれる年（4月〜12月=fy, 1月〜3月=fy+1）
+  var _m2 = today.getMonth() + 1, _d2 = today.getDate();
+  var fy = (_m2 < 3 || (_m2 === 3 && _d2 < 16)) ? today.getFullYear() - 1 : today.getFullYear();
+  // 年度内に含まれる年（3/16〜12月=fy, 1月〜3/15=fy+1）
   var years = [fy, fy + 1];
 
   var holidays = {};
@@ -404,8 +406,9 @@ function api_getWorkingDays() {
 
   // 今日〜年度末の範囲で勤務日を算出
   var today = new Date();
-  var fy = today.getMonth() < 3 ? today.getFullYear() - 1 : today.getFullYear();
-  var endDate = new Date(fy + 1, 2, 31); // 年度末 3/31
+  var _m3 = today.getMonth() + 1, _d3 = today.getDate();
+  var fy = (_m3 < 3 || (_m3 === 3 && _d3 < 16)) ? today.getFullYear() - 1 : today.getFullYear();
+  var endDate = new Date(fy + 1, 2, 15); // 年度末 3/15
 
   var result = [];
   var cursor = new Date(today.getFullYear(), today.getMonth(), today.getDate());
