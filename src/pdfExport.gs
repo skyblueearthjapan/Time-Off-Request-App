@@ -716,7 +716,7 @@ function pdfInsertSign_(sheet, imageUrl, row, col, width, height) {
   }
 
   var blob = DriveApp.getFileById(fileId).getBlob();
-  var img = sheet.insertImage(blob, col, row);
+  var img = sheet.insertImage(blob, col, row, 40, 3);
   if (width) img.setWidth(width);
   if (height) img.setHeight(height);
 }
