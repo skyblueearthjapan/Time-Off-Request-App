@@ -71,6 +71,36 @@
     .kpi-value.warn{color:var(--warn);}
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;}
     td.qcell{text-align:center;}
+
+    /* 承認者選択モーダル */
+    .modal-overlay{
+      position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,.35);z-index:100;
+      display:flex;align-items:center;justify-content:center;
+    }
+    .modal-overlay.hidden{display:none;}
+    .modal-box{
+      background:#fff;border-radius:20px;padding:28px 24px;
+      max-width:480px;width:90%;max-height:80vh;overflow-y:auto;
+      box-shadow:0 20px 60px rgba(0,0,0,.15);
+    }
+    .modal-box h3{margin:0 0 6px;font-weight:900;font-size:18px;}
+    .modal-box .modal-sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
+    .approver-btn{
+      display:block;width:100%;text-align:left;padding:14px 16px;
+      margin-bottom:8px;border-radius:14px;border:1px solid var(--line);
+      background:#fff;color:var(--text);cursor:pointer;font-size:14px;
+      font-weight:700;box-shadow:none;transition:background .15s;
+    }
+    .approver-btn:hover{background:var(--bg1);}
+    .approver-btn .dept-list{font-size:12px;color:var(--muted);font-weight:400;margin-top:2px;}
+    .approver-btn.all-dept{
+      background:linear-gradient(135deg,var(--accent2),#38bdf8);
+      color:#fff;border-color:transparent;text-align:center;
+    }
+    .approver-btn.all-dept:hover{opacity:.9;}
+    .approver-btn.all-dept .dept-list{color:rgba(255,255,255,.7);}
+
     @media(max-width:640px){
       header{flex-direction:column;align-items:flex-start;gap:8px;}
       .wrap{padding:12px 10px;}
@@ -85,14 +115,24 @@
   <header>
     <div>
       <div class="title">部署管理ダッシュボード</div>
-      <div class="sub" id="headerSub">担当部署の有給取得状況</div>
+      <div class="sub" id="headerSub">読込中...</div>
     </div>
     <div class="row">
       <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOP</a>
+      <button class="ghost btn-sm" id="btnChangeApprover" onclick="showApproverModal()" style="display:none;">承認者変更</button>
       <a href="<?= APP_URL ?>?page=somuAdmin" target="_top" class="nav-link" id="navSomu" style="display:none;">総務管理</a>
       <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
     </div>
   </header>
+
+  <!-- 承認者選択モーダル -->
+  <div class="modal-overlay hidden" id="approverModal">
+    <div class="modal-box">
+      <h3>承認者を選択</h3>
+      <div class="modal-sub">表示する承認者の部署を選んでください</div>
+      <div id="approverList"></div>
+    </div>
+  </div>
 
   <div class="wrap">
     <!-- フィルタ -->
@@ -127,6 +167,10 @@
 var APP_URL = '<?= APP_URL ?>';
 var PORTAL_URL = '<?= PORTAL_URL ?>';
 var currentData = [];
+var SELECTED_DEPTS = [];
+var SELECTED_NAME = '';
+var IS_ADMIN = false;
+var ALL_PROFILES = [];
 
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
@@ -146,10 +190,82 @@ window.addEventListener('DOMContentLoaded', function() {
     fySelect.appendChild(opt);
   }
 
-  loadData();
+  // 承認者プロファイル取得 → モーダル or 自動選択
+  initApprover();
 });
 
+function initApprover() {
+  document.getElementById('headerSub').textContent = '承認者情報を読込中...';
+  google.script.run
+    .withSuccessHandler(function(result) {
+      IS_ADMIN = result.isAdmin;
+      ALL_PROFILES = result.profiles || [];
+
+      if (IS_ADMIN) {
+        // 管理者 → 承認者選択モーダルを表示
+        document.getElementById('btnChangeApprover').style.display = '';
+        showApproverModal();
+      } else if (ALL_PROFILES.length === 1) {
+        // 一般承認者（1人）→ 自動選択してダッシュボード表示
+        selectApprover(ALL_PROFILES[0].name, ALL_PROFILES[0].depts);
+      } else if (ALL_PROFILES.length > 1) {
+        // 複数プロファイル（通常はない）→ モーダル表示
+        showApproverModal();
+      } else {
+        document.getElementById('headerSub').textContent = '担当部署が登録されていません';
+        document.getElementById('tableWrap').innerHTML = '<div class="loading">M_DEPT_APPROVERSに登録がありません。</div>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('headerSub').textContent = 'エラー: ' + err.message;
+    })
+    .api_getApproverProfiles();
+}
+
+function showApproverModal() {
+  var container = document.getElementById('approverList');
+  container.innerHTML = '';
+
+  if (IS_ADMIN) {
+    // 「全部署」ボタン
+    var allDepts = [];
+    for (var i = 0; i < ALL_PROFILES.length; i++) {
+      for (var j = 0; j < ALL_PROFILES[i].depts.length; j++) {
+        if (allDepts.indexOf(ALL_PROFILES[i].depts[j]) < 0) {
+          allDepts.push(ALL_PROFILES[i].depts[j]);
+        }
+      }
+    }
+    var allBtn = document.createElement('button');
+    allBtn.className = 'approver-btn all-dept';
+    allBtn.innerHTML = '全部署<div class="dept-list">' + escHtml(allDepts.join(', ')) + '</div>';
+    allBtn.onclick = (function(d) { return function() { selectApprover('全部署', d); }; })(allDepts);
+    container.appendChild(allBtn);
+  }
+
+  // 各承認者ボタン
+  for (var i = 0; i < ALL_PROFILES.length; i++) {
+    var p = ALL_PROFILES[i];
+    var btn = document.createElement('button');
+    btn.className = 'approver-btn';
+    btn.innerHTML = escHtml(p.name) + '<div class="dept-list">' + escHtml(p.depts.join(', ')) + '</div>';
+    btn.onclick = (function(name, depts) { return function() { selectApprover(name, depts); }; })(p.name, p.depts);
+    container.appendChild(btn);
+  }
+
+  document.getElementById('approverModal').classList.remove('hidden');
+}
+
+function selectApprover(name, depts) {
+  SELECTED_NAME = name;
+  SELECTED_DEPTS = depts;
+  document.getElementById('approverModal').classList.add('hidden');
+  document.getElementById('headerSub').textContent = '担当: ' + name + '（' + depts.join(', ') + '）';
+  loadData();
+}
+
 function loadData() {
+  if (!SELECTED_DEPTS.length) return;
   var wrap = document.getElementById('tableWrap');
   wrap.innerHTML = '<div class="loading">読込中...</div>';
   var fy = Number(document.getElementById('fySelect').value);
@@ -157,16 +273,13 @@ function loadData() {
   google.script.run
     .withSuccessHandler(function(result) {
       currentData = result.workers || [];
-      if (result.deptNames) {
-        document.getElementById('headerSub').textContent = '担当部署: ' + result.deptNames.join(', ');
-      }
       renderKpi(currentData);
       renderTable(currentData);
     })
     .withFailureHandler(function(err) {
       wrap.innerHTML = '<div class="loading" style="color:var(--danger);">エラー: ' + escHtml(err.message) + '</div>';
     })
-    .api_getDeptAdminView(fy);
+    .api_getDeptAdminView(fy, SELECTED_DEPTS);
 }
 
 function renderKpi(data) {
@@ -216,9 +329,9 @@ function renderTable(data) {
       if (!q) {
         qHtml += '<td class="qcell"><span class="pill">―</span></td>';
       } else if (q.taken) {
-        qHtml += '<td class="qcell"><span class="pill ok">✓</span></td>';
+        qHtml += '<td class="qcell"><span class="pill ok">&#10003;</span></td>';
       } else if (q.overdue) {
-        qHtml += '<td class="qcell"><span class="pill danger">✗</span></td>';
+        qHtml += '<td class="qcell"><span class="pill danger">&#10007;</span></td>';
       } else {
         qHtml += '<td class="qcell"><span class="pill">―</span></td>';
       }

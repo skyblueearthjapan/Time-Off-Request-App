@@ -105,6 +105,10 @@ function api_canAccessAdmin() {
   return canAccessAdmin_();
 }
 
+function api_isAdmin() {
+  return isAdmin_();
+}
+
 function api_isSomu() {
   return isSomu_();
 }
@@ -115,4 +119,62 @@ function api_isDeptApprover() {
 
 function api_getDeptApproverDepts() {
   return getDeptApproverDepts_();
+}
+
+/**
+ * 部署管理画面の初期化用: 承認者プロファイル一覧を返す
+ * 管理者の場合 → 全承認者プロファイル + isAdmin=true
+ * 一般承認者の場合 → 自分のプロファイルのみ + isAdmin=false
+ * @return {Object} { isAdmin, currentEmail, profiles: [{ email, name, depts }] }
+ */
+function api_getApproverProfiles() {
+  var email = Session.getActiveUser().getEmail().toLowerCase();
+  var admin = isAdmin_();
+
+  // M_DEPT_APPROVERS を読んでプロファイル構築
+  var sh = requireSheet_(SHEET.DEPT_APPROVERS);
+  var data = sh.getDataRange().getValues();
+  var profileMap = {}; // email → { email, name, depts: [] }
+
+  for (var r = 1; r < data.length; r++) {
+    var deptName = normalize_(String(data[r][0] || '')).trim();
+    var approverEmails = normalize_(String(data[r][1] || ''));
+    var approverName = normalize_(String(data[r][2] || ''));
+    if (!deptName || !approverEmails) continue;
+
+    var emailList = approverEmails.split(',').map(function(s) { return s.trim().toLowerCase(); }).filter(Boolean);
+    for (var i = 0; i < emailList.length; i++) {
+      var e = emailList[i];
+      if (!profileMap[e]) {
+        profileMap[e] = { email: e, name: approverName || e, depts: [] };
+      }
+      if (profileMap[e].depts.indexOf(deptName) < 0) {
+        profileMap[e].depts.push(deptName);
+      }
+      // 名前が空だった場合、後の行で名前が見つかれば上書き
+      if (approverName && profileMap[e].name === e) {
+        profileMap[e].name = approverName;
+      }
+    }
+  }
+
+  var profiles = [];
+  var keys = Object.keys(profileMap);
+  for (var k = 0; k < keys.length; k++) {
+    profiles.push(profileMap[keys[k]]);
+  }
+  // 名前でソート
+  profiles.sort(function(a, b) { return a.name.localeCompare(b.name, 'ja'); });
+
+  if (admin) {
+    return { isAdmin: true, currentEmail: email, profiles: profiles };
+  } else {
+    // 自分のプロファイルだけ返す
+    var myProfile = profileMap[email];
+    return {
+      isAdmin: false,
+      currentEmail: email,
+      profiles: myProfile ? [myProfile] : [],
+    };
+  }
 }

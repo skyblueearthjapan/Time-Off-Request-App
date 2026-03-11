@@ -41,10 +41,10 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
     case 'deptAdmin':
-      // 部署承認者チェック
-      if (!isDeptApprover_()) {
+      // 管理者 OR 部署承認者チェック
+      if (!isAdmin_() && !isDeptApprover_()) {
         var noAuth = HtmlService.createTemplateFromFile('no_auth');
-        noAuth.message = 'このページは部署承認者のみアクセスできます。M_DEPT_APPROVERSに登録があるか確認してください。';
+        noAuth.message = 'このページは部署承認者または管理者のみアクセスできます。';
         noAuth.APP_URL = appUrl;
         return noAuth.evaluate().setTitle('アクセス権限なし')
           .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);

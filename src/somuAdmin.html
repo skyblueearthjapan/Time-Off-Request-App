@@ -133,6 +133,9 @@ window.addEventListener('DOMContentLoaded', function() {
   google.script.run.withSuccessHandler(function(ok) {
     if (ok) document.getElementById('navDept').style.display = '';
   }).api_isDeptApprover();
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navDept').style.display = '';
+  }).api_isAdmin();
 
   // 年度セレクト初期化
   var fySelect = document.getElementById('fySelect');

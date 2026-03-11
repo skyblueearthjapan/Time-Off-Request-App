@@ -287,10 +287,13 @@ var currentStep = 1;
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
 
-  // 部署管理リンク表示判定
+  // 部署管理リンク表示判定（管理者 or 部署承認者）
   google.script.run.withSuccessHandler(function(ok) {
     if (ok) document.getElementById('navDept').style.display = '';
   }).api_isDeptApprover();
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navDept').style.display = '';
+  }).api_isAdmin();
 
   // 総務管理リンク表示判定
   google.script.run.withSuccessHandler(function(ok) {

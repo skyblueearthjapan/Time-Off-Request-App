@@ -388,13 +388,27 @@ function buildAdminViewData_(depts, fyYear) {
 
 /**
  * 部署承認者ビュー: 担当部署の年度別有給取得状況（期間別付き）
+ * 管理者は任意の部署を指定可能（承認者選択モーダル用）
  * @param {number} fyYear 年度
- * @return {Object[]} 作業員ごとの取得状況配列
+ * @param {string[]} [selectedDepts] 管理者が指定する部署配列（省略時は自分の担当部署）
+ * @return {Object} { workers: [...], deptNames: [...] }
  */
-function api_getDeptAdminView(fyYear) {
-  if (!isDeptApprover_()) throw new Error('部署承認者の権限がありません。');
-  var email = Session.getActiveUser().getEmail() || '';
-  var depts = getDeptApproverDepts_();
+function api_getDeptAdminView(fyYear, selectedDepts) {
+  var admin = isAdmin_();
+  if (!admin && !isDeptApprover_()) throw new Error('部署承認者の権限がありません。');
+
+  var depts;
+  if (selectedDepts && selectedDepts.length > 0 && admin) {
+    // 管理者が特定の承認者の部署を選択
+    depts = selectedDepts;
+  } else if (selectedDepts && selectedDepts.length > 0) {
+    // 一般承認者 → 自分の担当部署のみ許可
+    var myDepts = getDeptApproverDepts_();
+    depts = selectedDepts.filter(function(d) { return myDepts.indexOf(d) >= 0; });
+  } else {
+    depts = getDeptApproverDepts_();
+  }
+
   if (!depts || depts.length === 0) return { workers: [], deptNames: [] };
   var fy = fyYear || computeFiscalYear_(new Date());
   return { workers: buildAdminViewData_(depts, fy), deptNames: depts };
