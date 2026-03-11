@@ -208,6 +208,7 @@ function onApproverChange() {
     signArea.style.display = 'block';
     document.querySelector('.sign-area-label').textContent = '下の枠内にサインを書いてください';
     btn.disabled = false;
+    resizeCanvas();
     clearCanvas();
     return;
   }
