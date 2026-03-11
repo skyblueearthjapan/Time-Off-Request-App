@@ -100,6 +100,10 @@
     .confirm-table{width:100%;font-size:13px;}
     .confirm-table th{text-align:right;padding:6px 10px 6px 0;color:var(--muted);width:35%;}
     .confirm-table td{padding:6px 0;}
+    /* 本日の休暇者ハイライト */
+    .today-row{background:linear-gradient(90deg,#fff7ed,#ffedd5);border-left:4px solid #f97316;font-weight:700;}
+    .today-row td{padding-top:10px;padding-bottom:10px;}
+    .today-badge{display:inline-block;background:#f97316;color:#fff;font-size:10px;font-weight:900;padding:2px 6px;border-radius:4px;margin-left:6px;vertical-align:middle;}
     @media(max-width:640px){
       header{flex-direction:column;align-items:flex-start;gap:8px;}
       .wrap{padding:12px 10px;}
@@ -433,11 +437,16 @@ function loadLeaveTable() {
       wrap.innerHTML = '<div class="loading">予定なし</div>';
       return;
     }
+    // 本日の日付文字列（yyyy/MM/dd）
+    var now = new Date();
+    var todayStr = now.getFullYear() + '/' + ('0'+(now.getMonth()+1)).slice(-2) + '/' + ('0'+now.getDate()).slice(-2);
+
     var html = '<table><thead><tr><th>日付</th><th>部署</th><th>氏名</th><th>区分</th><th>種類</th><th>状態</th><th></th></tr></thead><tbody>';
     items.forEach(function(it) {
       var statusClass = it.status === '承認済' ? 'ok' : 'info';
-      html += '<tr>'
-        + '<td>' + it.leaveDate + '</td>'
+      var isToday = it.leaveDate === todayStr;
+      html += '<tr' + (isToday ? ' class="today-row"' : '') + '>'
+        + '<td>' + it.leaveDate + (isToday ? '<span class="today-badge">本日</span>' : '') + '</td>'
         + '<td>' + it.deptName + '</td>'
         + '<td>' + it.workerName + '</td>'
         + '<td>' + it.leaveKubun + (it.halfDayType ? '(' + it.halfDayType + ')' : '') + '</td>'
