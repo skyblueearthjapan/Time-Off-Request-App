@@ -481,8 +481,8 @@ function renderTable(data) {
 function renderQuarterCell(q) {
   if (!q) return '<td><span class="pill">―</span></td>';
   if (q.isFuture) return '<td><span class="pill">' + (q.periodCount || 0) + '</span></td>';
-  if (q.shortage >= 2) return '<td><span class="pill danger">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
-  if (q.shortage === 1) return '<td><span class="pill warn">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-1)</span></span></td>';
+  if (Number(q.shortage) >= 2) return '<td><span class="pill danger">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
+  if (Number(q.shortage) >= 1) return '<td><span class="pill warn">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
   return '<td><span class="pill ok">' + (q.periodCount || 0) + '</span></td>';
 }
 

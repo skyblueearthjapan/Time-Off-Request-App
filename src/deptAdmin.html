@@ -276,6 +276,12 @@ function loadData() {
   google.script.run
     .withSuccessHandler(function(result) {
       currentData = result.workers || [];
+      // デバッグ: 最初の1人のquartersを確認
+      if (currentData.length > 0) {
+        var d0 = currentData[0];
+        console.log('FRONTEND DEBUG: ' + d0.workerName + ' quarters=', JSON.stringify(d0.quarters));
+        if (d0.quarters && d0.quarters[0]) console.log('FRONTEND q[0].shortage type=' + typeof d0.quarters[0].shortage + ' val=' + d0.quarters[0].shortage);
+      }
       renderKpi(currentData);
       renderTable(currentData);
     })
@@ -334,10 +340,10 @@ function renderTable(data) {
         qHtml += '<td class="qcell"><span class="pill">―</span></td>';
       } else if (q.isFuture) {
         qHtml += '<td class="qcell"><span class="pill">' + (q.periodCount || 0) + '</span></td>';
-      } else if (q.shortage >= 2) {
+      } else if (Number(q.shortage) >= 2) {
         qHtml += '<td class="qcell"><span class="pill danger">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
-      } else if (q.shortage === 1) {
-        qHtml += '<td class="qcell"><span class="pill warn">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-1)</span></span></td>';
+      } else if (Number(q.shortage) >= 1) {
+        qHtml += '<td class="qcell"><span class="pill warn">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
       } else {
         qHtml += '<td class="qcell"><span class="pill ok">' + (q.periodCount || 0) + '</span></td>';
       }
