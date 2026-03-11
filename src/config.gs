@@ -88,6 +88,10 @@ var HEADER_ALIAS_ = {
   'SIGN_IMAGE_URL': 'サイン画像URL',
   'CREATED_BY_EMAIL': '作成者メール',
   'UPDATED_AT': '更新日時',
+  'APPROVED_BY1_EMAIL': '1次承認者メール',
+  'APPROVED_BY2': '2次承認者名',
+  'APPROVED_BY2_EMAIL': '2次承認者メール',
+  'APPROVED_AT2': '2次承認日時',
 };
 
 // ====== UTIL ======

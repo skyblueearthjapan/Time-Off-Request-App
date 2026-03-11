@@ -66,7 +66,8 @@ function api_submitLeaveRequest(data) {
         'REQ_ID', '年度', '部署ID', '部署名', '作業員ID', '作業員名',
         '休暇区分', '半日区分', '休暇日', '休暇種類',
         '振替元出勤日', '特別理由', '有給詳細', '追加詳細',
-        '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID'
+        '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID',
+        'APPROVED_BY1_EMAIL', 'APPROVED_BY2', 'APPROVED_BY2_EMAIL', 'APPROVED_AT2'
       ];
       sh.getRange(1, 1, 1, headers.length).setValues([headers]);
       SpreadsheetApp.flush();
@@ -186,6 +187,10 @@ function api_getLeaveRequestById(reqId) {
           status: normalize_(row[idx['承認状態']]),
           signImageUrl: normalize_(row[idx['サイン画像URL']]),
           pdfUrl: normalize_(row[idx['PDF_URL']]),
+          approvedBy1Email: idx['APPROVED_BY1_EMAIL'] !== undefined ? normalize_(row[idx['APPROVED_BY1_EMAIL']]) : '',
+          approvedBy2: idx['APPROVED_BY2'] !== undefined ? normalize_(row[idx['APPROVED_BY2']]) : '',
+          approvedBy2Email: idx['APPROVED_BY2_EMAIL'] !== undefined ? normalize_(row[idx['APPROVED_BY2_EMAIL']]) : '',
+          approvedAt2: idx['APPROVED_AT2'] !== undefined && row[idx['APPROVED_AT2']] instanceof Date ? fmtDate_(row[idx['APPROVED_AT2']], 'yyyy-MM-dd HH:mm:ss') : '',
           rowNo: i + 2,
         };
         console.log('返却データ: ' + JSON.stringify(result));
@@ -339,6 +344,11 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
     sh.getRange(targetRow, idx['承認状態'] + 1).setValue(STATUS.APPROVED);
     sh.getRange(targetRow, idx['承認日時'] + 1).setValue(now);
     sh.getRange(targetRow, idx['サイン画像URL'] + 1).setValue(signImageUrl);
+    // 1次承認者メールを保存（2次承認PDF再生成用）
+    if (idx['APPROVED_BY1_EMAIL'] !== undefined || idx['1次承認者メール'] !== undefined) {
+      var col1 = idx['APPROVED_BY1_EMAIL'] !== undefined ? idx['APPROVED_BY1_EMAIL'] : idx['1次承認者メール'];
+      sh.getRange(targetRow, col1 + 1).setValue(approverEmail || '');
+    }
     SpreadsheetApp.flush();
 
     // 3. PDF生成（承認者メールを渡す）
@@ -378,4 +388,179 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ====== 2次承認 ======
+
+/**
+ * 2次承認待ち一覧取得（総務管理画面用）
+ * @return {Object[]} 1次承認済み・2次未承認の申請一覧
+ */
+function api_getPending2ndApprovals() {
+  if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません（総務または管理者のみ）');
+
+  var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+  var sh = info.sh;
+  var idx = info.idx;
+  var lastRow = sh.getLastRow();
+  if (lastRow < 2) return [];
+
+  var readCols = Math.max(info.header.length, sh.getLastColumn());
+  var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
+  var out = [];
+
+  // APPROVED_AT2 列のインデックス取得
+  var at2Col = idx['APPROVED_AT2'] !== undefined ? idx['APPROVED_AT2'] : idx['2次承認日時'];
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var reqId = normalize_(row[idx['REQ_ID']]);
+    if (!reqId) continue;
+
+    var status = normalize_(row[idx['承認状態']]);
+    if (status !== STATUS.APPROVED) continue;
+
+    // 2次承認済みはスキップ
+    if (at2Col !== undefined && row[at2Col] && String(row[at2Col]).trim() !== '') continue;
+
+    var leaveDate = row[idx['休暇日']];
+    out.push({
+      reqId: reqId,
+      deptName: normalize_(row[idx['部署名']]),
+      workerName: normalize_(row[idx['作業員名']]),
+      leaveDate: leaveDate instanceof Date ? fmtDate_(leaveDate, 'yyyy/MM/dd') : String(leaveDate || ''),
+      leaveKubun: normalize_(row[idx['休暇区分']]),
+      leaveType: normalize_(row[idx['休暇種類']]),
+      approvedAt: row[idx['承認日時']] instanceof Date ? fmtDate_(row[idx['承認日時']], 'yyyy/MM/dd HH:mm') : '',
+    });
+  }
+
+  // 休暇日昇順
+  out.sort(function(a, b) { return (a.leaveDate || '').localeCompare(b.leaveDate || ''); });
+  return out;
+}
+
+/**
+ * 2次承認実行（総務管理画面から呼ばれる）
+ * @param {string} reqId - 申請ID
+ * @param {string} approver2Email - 2次承認者メール（電子印取得用）
+ * @return {Object} { ok: boolean }
+ */
+function api_approveLeaveRequest2(reqId, approver2Email) {
+  if (!reqId) throw new Error('REQ_IDが指定されていません。');
+  if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません（総務または管理者のみ）');
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(60000);
+  try {
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) throw new Error('申請データがありません。');
+
+    var readCols = Math.max(info.header.length, sh.getLastColumn());
+    var values = sh.getRange(2, 1, lastRow - 1, readCols).getValues();
+    var targetRow = -1;
+
+    for (var i = 0; i < values.length; i++) {
+      if (normalize_(values[i][idx['REQ_ID']]) === reqId) {
+        targetRow = i + 2;
+        break;
+      }
+    }
+    if (targetRow < 0) throw new Error('申請が見つかりません: ' + reqId);
+
+    var status = normalize_(values[targetRow - 2][idx['承認状態']]);
+    if (status !== STATUS.APPROVED) throw new Error('1次承認されていない申請です。');
+
+    var now = new Date();
+
+    // 2次承認者名を取得（M_STAMPの備考列から）
+    var approver2Name = approver2Email || '';
+    if (approver2Email) {
+      try {
+        var stampSh = getDb_().getSheetByName(SHEET.STAMP);
+        if (stampSh) {
+          var stampData = stampSh.getDataRange().getValues();
+          for (var s = 1; s < stampData.length; s++) {
+            if (normalize_(String(stampData[s][0] || '')).toLowerCase() === approver2Email.toLowerCase()) {
+              approver2Name = normalize_(String(stampData[s][2] || '')) || approver2Email;
+              break;
+            }
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    // 2次承認情報を書き込み（英語キーのみ。HEADER_ALIAS_でエイリアス解決済み）
+    function setCol2(name, value) {
+      var colIdx = idx[name];
+      if (colIdx !== undefined) {
+        sh.getRange(targetRow, colIdx + 1).setValue(value);
+      }
+    }
+    setCol2('APPROVED_BY2', approver2Name);
+    setCol2('APPROVED_BY2_EMAIL', approver2Email);
+    setCol2('APPROVED_AT2', now);
+    SpreadsheetApp.flush();
+
+    // PDF再生成（2次承認者の電子印を追加）
+    try {
+      var approver1Email = '';
+      var a1Col = idx['APPROVED_BY1_EMAIL'] !== undefined ? idx['APPROVED_BY1_EMAIL'] : idx['1次承認者メール'];
+      if (a1Col !== undefined) {
+        approver1Email = normalize_(values[targetRow - 2][a1Col]);
+      }
+      console.log('2次承認PDF再生成: reqId=' + reqId + ', approver1=' + approver1Email + ', approver2=' + approver2Email);
+
+      // 既存PDFをゴミ箱へ
+      var pdfFileIdCol = idx['PDF_FILE_ID'];
+      if (pdfFileIdCol !== undefined) {
+        var oldPdfId = normalize_(values[targetRow - 2][pdfFileIdCol]);
+        if (oldPdfId) {
+          try { DriveApp.getFileById(oldPdfId).setTrashed(true); } catch (e) { console.warn('旧PDF削除スキップ: ' + e.message); }
+        }
+      }
+
+      // PDF再生成（2次承認者印付き）
+      var pdfResult = generateLeavePdf_(reqId, approver1Email, approver2Email);
+      if (pdfResult && pdfResult.ok) {
+        if (idx['PDF_URL'] !== undefined) sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
+        if (idx['PDF_FILE_ID'] !== undefined) sh.getRange(targetRow, idx['PDF_FILE_ID'] + 1).setValue(pdfResult.pdfFileId || '');
+      }
+    } catch (pdfErr) {
+      console.error('2次承認PDF再生成エラー（続行）: ' + pdfErr.message);
+    }
+
+    SpreadsheetApp.flush();
+    return { ok: true, reqId: reqId };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 2次承認一括実行（シート読込を1回に最適化）
+ * @param {string[]} reqIds - 申請IDの配列
+ * @param {string} approver2Email - 2次承認者メール
+ * @return {Object} { ok: boolean, results: [...] }
+ */
+function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
+  if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません');
+  if (!reqIds || !reqIds.length) throw new Error('申請IDが指定されていません');
+  if (reqIds.length > 20) throw new Error('一度に承認できるのは20件までです');
+
+  var results = [];
+  // 1件ずつ処理（各呼び出しでロック取得→解放）
+  // PDF再生成があるため件数上限を20件に制限（GAS 6分制限対策）
+  for (var i = 0; i < reqIds.length; i++) {
+    try {
+      api_approveLeaveRequest2(reqIds[i], approver2Email);
+      results.push({ reqId: reqIds[i], ok: true });
+    } catch (e) {
+      results.push({ reqId: reqIds[i], ok: false, error: e.message });
+    }
+  }
+  return { ok: true, results: results };
 }

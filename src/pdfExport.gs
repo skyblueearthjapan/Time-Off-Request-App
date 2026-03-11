@@ -121,7 +121,7 @@ var PDF_COLORS_ = {
 /**
  * 休暇届PDF生成（GASでシートを動的構築）
  */
-function generateLeavePdf_(reqId, approverEmail) {
+function generateLeavePdf_(reqId, approverEmail, approver2Email) {
   var reqData = api_getLeaveRequestById(reqId);
   if (!reqData) throw new Error('申請が見つかりません: ' + reqId);
 
@@ -140,7 +140,7 @@ function generateLeavePdf_(reqId, approverEmail) {
     sheet.setName('休暇届');
 
     // シート構築＋データ書込み（サムネイルinsertImage含む）
-    buildLeavePdfSheet_(sheet, reqData, approverEmail);
+    buildLeavePdfSheet_(sheet, reqData, approverEmail, approver2Email);
     SpreadsheetApp.flush();
     // insertImageの画像がサーバーに反映されるまで待機
     Utilities.sleep(4000);
@@ -184,7 +184,7 @@ function generateLeavePdf_(reqId, approverEmail) {
 /**
  * 休暇届シートをゼロから構築しデータを書き込む
  */
-function buildLeavePdfSheet_(sheet, data, approverEmail) {
+function buildLeavePdfSheet_(sheet, data, approverEmail, approver2Email) {
   var C = PDF_COLORS_;
   var DOWS = ['日','月','火','水','木','金','土'];
 
@@ -454,9 +454,6 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
   var approverStampInserted = false;
   try {
     var stampEmail = approverEmail || '';
-    if (!stampEmail) {
-      try { stampEmail = Session.getActiveUser().getEmail() || ''; } catch (e2) { /* ignore */ }
-    }
     console.log('電子印検索: approverEmail=' + approverEmail + ', stampEmail=' + stampEmail);
 
     if (stampEmail) {
@@ -495,6 +492,40 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
 
   if (!approverStampInserted && !data.signImageUrl) {
     console.warn('承認印なし: 電子印もサイン画像もありません');
+  }
+
+  // ============================================================
+  //  2次承認者（部長）電子印挿入（D24:F27エリア）
+  // ============================================================
+  if (approver2Email) {
+    try {
+      console.log('2次承認者電子印検索: approver2Email=' + approver2Email);
+      var stamp2FileId = getStampFileId_(approver2Email);
+      console.log('2次承認者電子印FileId: ' + stamp2FileId);
+      if (stamp2FileId) {
+        var stamp2Blob = getStampThumbnailBlob_(stamp2FileId);
+        if (stamp2Blob) {
+          SpreadsheetApp.flush();
+          Utilities.sleep(500);
+          var stamp2Img = sheet.insertImage(stamp2Blob, 4, 24, 40, 3);
+          stamp2Img.setWidth(120);
+          stamp2Img.setHeight(70);
+          console.log('2次承認者電子印挿入成功: D24');
+        }
+      }
+      // 所属長承認日をG28に表示（1次承認日）
+      sheet.getRange('G28:I28').merge().setValue(approvedStr)
+        .setFontSize(9).setHorizontalAlignment('center');
+      // 部長承認日（2次承認日）をD28に表示（呼び出し時点の日付）
+      var ad2 = new Date();
+      if (data.approvedAt2) {
+        ad2 = new Date(data.approvedAt2);
+      }
+      var approved2Str = (ad2.getFullYear() - 2018) + '/' + (ad2.getMonth() + 1) + '/' + ad2.getDate();
+      sheet.getRange('D28:F28').setValue(approved2Str);
+    } catch (e2) {
+      console.error('2次承認者電子印エラー: ' + e2.message);
+    }
   }
 
   // --- 印刷範囲外の列を非表示 ---

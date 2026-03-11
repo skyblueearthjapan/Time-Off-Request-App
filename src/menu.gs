@@ -96,6 +96,7 @@ function onOpen() {
     .addItem('スタンプ同期（手動実行）', 'syncStampMaster')
     .addItem('部署承認者同期（手動実行）', 'syncDeptApprovers')
     .addItem('サマリー再構築', 'rebuildLeaveSummary')
+    .addItem('T_LEAVE_REQUEST ヘッダ追加（マイグレーション）', 'migrateLeaveRequestHeaders_')
     .addSeparator()
     .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails')
     .addSeparator()
@@ -250,7 +251,8 @@ function setupAllSheets() {
       'REQ_ID', '年度', '部署ID', '部署名', '作業員ID', '作業員名',
       '休暇区分', '半日区分', '休暇日', '休暇種類',
       '振替元出勤日', '特別理由', '有給詳細', '追加詳細',
-      '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID'
+      '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID',
+      'APPROVED_BY1_EMAIL', 'APPROVED_BY2', 'APPROVED_BY2_EMAIL', 'APPROVED_AT2'
     ]];
     reqSh.getRange(1, 1, 1, reqHeader[0].length).setValues(reqHeader);
     formatHeaderRow_(reqSh);
@@ -333,7 +335,36 @@ function formatHeaderRow_(sh) {
 function setupAllTriggers() {
   setupSyncTrigger_();
   setupWarnMailTrigger_();
+  setupNotifyTriggers_();
   Logger.log('全トリガーをセットアップしました。');
+}
+
+/**
+ * T_LEAVE_REQUESTに不足ヘッダ列を自動追加（マイグレーション）
+ */
+function migrateLeaveRequestHeaders_() {
+  var sh = requireSheet_(SHEET.LEAVE_REQUEST);
+  var lastCol = sh.getLastColumn();
+  if (lastCol < 1) return;
+  var headers = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  var headerSet = {};
+  for (var i = 0; i < headers.length; i++) {
+    headerSet[String(headers[i]).trim()] = true;
+  }
+  var newCols = ['APPROVED_BY1_EMAIL', 'APPROVED_BY2', 'APPROVED_BY2_EMAIL', 'APPROVED_AT2'];
+  var added = [];
+  for (var j = 0; j < newCols.length; j++) {
+    if (!headerSet[newCols[j]]) {
+      lastCol++;
+      sh.getRange(1, lastCol).setValue(newCols[j]).setFontWeight('bold')
+        .setBackground('#4a86c8').setFontColor('#ffffff');
+      added.push(newCols[j]);
+    }
+  }
+  if (added.length) {
+    SpreadsheetApp.flush();
+    Logger.log('T_LEAVE_REQUEST ヘッダ追加: ' + added.join(', '));
+  }
 }
 
 function setupSyncTrigger_() {
@@ -356,4 +387,26 @@ function setupWarnMailTrigger_() {
     .atHour(8)
     .nearMinute(0)
     .create();
+}
+
+/** 通知メールトリガー（3種） */
+function setupNotifyTriggers_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var funcs = triggers.map(function(t) { return t.getHandlerFunction(); });
+
+  // 7:00 本日休暇者通知
+  if (funcs.indexOf('notifyTodayLeaves_') < 0) {
+    ScriptApp.newTrigger('notifyTodayLeaves_')
+      .timeBased().everyDays(1).atHour(7).nearMinute(0).create();
+  }
+  // 17:15頃 1次未承認通知（nearMinuteは15分刻み、17:20に最も近い）
+  if (funcs.indexOf('notifyPendingApproval1_') < 0) {
+    ScriptApp.newTrigger('notifyPendingApproval1_')
+      .timeBased().everyDays(1).atHour(17).nearMinute(15).create();
+  }
+  // 18:00頃 2次未承認通知（nearMinuteは15分刻み、18:10に最も近い）
+  if (funcs.indexOf('notifyPendingApproval2_') < 0) {
+    ScriptApp.newTrigger('notifyPendingApproval2_')
+      .timeBased().everyDays(1).atHour(18).nearMinute(0).create();
+  }
 }

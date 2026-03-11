@@ -26,6 +26,7 @@
       background:var(--card);border:1px solid var(--line);border-radius:18px;
       padding:14px 18px;box-shadow:0 10px 30px rgba(10,40,80,.06);margin-bottom:14px;
     }
+    .card-accent{border-left:4px solid var(--accent2);}
     .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
     button{
       padding:10px 16px;border-radius:12px;border:0;
@@ -33,6 +34,7 @@
       color:#fff;font-weight:800;cursor:pointer;font-size:14px;
       box-shadow:0 10px 22px rgba(31,157,85,.20);
     }
+    button:disabled{opacity:.5;cursor:not-allowed;}
     .btn-blue{background:linear-gradient(135deg,var(--accent2),#38bdf8);box-shadow:0 10px 22px rgba(14,165,233,.20);}
     .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
     .ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;}
@@ -68,6 +70,11 @@
     .kpi-value.danger{color:var(--danger);}
     .kpi-value.warn{color:var(--warn);}
     .table-scroll{overflow-x:auto;}
+    input[type="checkbox"]{width:16px;height:16px;cursor:pointer;}
+    .batch-bar{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#f1f5f9;border-radius:10px;}
+    .batch-bar .count{font-size:13px;font-weight:700;color:var(--muted);}
+    /* 承認者選択ドロップダウン */
+    .approver2-select{padding:8px 14px;border-radius:10px;border:1px solid var(--line);font-size:14px;min-width:200px;}
     @media(max-width:640px){
       header{flex-direction:column;align-items:flex-start;gap:8px;}
       .wrap{padding:12px 10px;}
@@ -82,7 +89,7 @@
   <header>
     <div>
       <div class="title">総務管理ダッシュボード</div>
-      <div class="sub">全社 有給取得義務管理</div>
+      <div class="sub">全社 有給取得義務管理 + 2次承認</div>
     </div>
     <div class="row">
       <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOP</a>
@@ -92,7 +99,35 @@
   </header>
 
   <div class="wrap">
-    <!-- フィルタ -->
+    <!-- ====== 2次承認セクション ====== -->
+    <div class="card card-accent">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">
+        2次承認待ち一覧
+        <span class="pill info" id="pending2Count">読込中...</span>
+      </div>
+
+      <!-- 2次承認者選択 -->
+      <div style="margin-bottom:10px;">
+        <label style="font-weight:700;font-size:13px;">2次承認者（電子印）：</label>
+        <select class="approver2-select" id="approver2Select">
+          <option value="">読込中...</option>
+        </select>
+        <span id="stamp2Status" style="font-size:12px;margin-left:8px;"></span>
+      </div>
+
+      <!-- 一括操作バー -->
+      <div class="batch-bar" id="batchBar" style="display:none;">
+        <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+        <span class="count" id="selectedCount">0件選択中</span>
+        <button class="btn-sm btn-blue" id="batchApproveBtn" onclick="batchApprove2()" disabled>一括2次承認</button>
+      </div>
+
+      <div class="table-scroll">
+        <div id="approval2Wrap"><div class="loading">読込中...</div></div>
+      </div>
+    </div>
+
+    <!-- ====== 有給管理セクション ====== -->
     <div class="card" style="padding:12px 16px;">
       <div class="row">
         <div>
@@ -108,7 +143,6 @@
       </div>
     </div>
 
-    <!-- KPI -->
     <div class="kpi-grid" id="kpiGrid">
       <div class="kpi-card"><div class="kpi-label">対象者数</div><div class="kpi-value" id="kpiTotal">-</div></div>
       <div class="kpi-card"><div class="kpi-label">有給未達者</div><div class="kpi-value danger" id="kpiWarn">-</div></div>
@@ -116,7 +150,6 @@
       <div class="kpi-card"><div class="kpi-label">平均有給回数</div><div class="kpi-value" id="kpiAvg">-</div></div>
     </div>
 
-    <!-- テーブル -->
     <div class="card">
       <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">有給取得義務 管理一覧</div>
       <div class="table-scroll" id="tableWrap"><div class="loading">読込中...</div></div>
@@ -127,6 +160,8 @@
 var APP_URL = '<?= APP_URL ?>';
 var PORTAL_URL = '<?= PORTAL_URL ?>';
 var currentData = [];
+var pending2Data = [];
+var selectedApprover2 = '';
 
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
@@ -160,14 +195,181 @@ window.addEventListener('DOMContentLoaded', function() {
     });
   }).api_getDeptList();
 
-  // 部署変更時に自動リロード
-  document.getElementById('deptFilter').addEventListener('change', function() {
-    loadData();
-  });
+  document.getElementById('deptFilter').addEventListener('change', function() { loadData(); });
 
+  // 2次承認者リスト読込
+  loadApprover2List();
+
+  // 2次承認待ち読込
+  loadPending2();
+
+  // 有給データ読込
   loadData();
 });
 
+// ====== 2次承認者ドロップダウン ======
+function loadApprover2List() {
+  google.script.run.withSuccessHandler(function(list) {
+    var sel = document.getElementById('approver2Select');
+    sel.innerHTML = '<option value="">-- 2次承認者を選択 --</option>';
+    for (var i = 0; i < list.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = list[i].email;
+      opt.textContent = list[i].name + '（' + list[i].email + '）';
+      sel.appendChild(opt);
+    }
+    sel.onchange = function() {
+      selectedApprover2 = sel.value;
+      var status = document.getElementById('stamp2Status');
+      if (sel.value) {
+        status.innerHTML = '<span style="color:#1f9d55;font-weight:700;">電子印あり</span>';
+      } else {
+        status.innerHTML = '';
+      }
+      updateBatchBtn();
+    };
+  }).withFailureHandler(function(err) {
+    document.getElementById('approver2Select').innerHTML = '<option value="">エラー: ' + err.message + '</option>';
+  }).api_getApproverList();
+}
+
+// ====== 2次承認待ち一覧 ======
+function loadPending2() {
+  var wrap = document.getElementById('approval2Wrap');
+  wrap.innerHTML = '<div class="loading">読込中...</div>';
+  google.script.run.withSuccessHandler(function(data) {
+    pending2Data = data || [];
+    document.getElementById('pending2Count').textContent = pending2Data.length + '件';
+    renderPending2();
+  }).withFailureHandler(function(err) {
+    wrap.innerHTML = '<div class="loading" style="color:var(--danger);">エラー: ' + escHtml(err.message) + '</div>';
+    document.getElementById('pending2Count').textContent = 'エラー';
+  }).api_getPending2ndApprovals();
+}
+
+function renderPending2() {
+  var wrap = document.getElementById('approval2Wrap');
+  if (!pending2Data.length) {
+    wrap.innerHTML = '<div class="loading" style="color:var(--accent);">2次承認待ちの申請はありません</div>';
+    document.getElementById('batchBar').style.display = 'none';
+    return;
+  }
+  document.getElementById('batchBar').style.display = 'flex';
+
+  var html = '<table><thead><tr>'
+    + '<th style="width:30px;"></th>'
+    + '<th>部署</th><th>氏名</th><th>休暇日</th><th>休暇種類</th><th>区分</th><th>1次承認日</th><th>操作</th>'
+    + '</tr></thead><tbody>';
+
+  for (var i = 0; i < pending2Data.length; i++) {
+    var d = pending2Data[i];
+    html += '<tr>'
+      + '<td><input type="checkbox" class="row-check" data-idx="' + i + '" onchange="updateSelectedCount()"></td>'
+      + '<td>' + escHtml(d.deptName) + '</td>'
+      + '<td>' + escHtml(d.workerName) + '</td>'
+      + '<td>' + escHtml(d.leaveDate) + '</td>'
+      + '<td>' + escHtml(d.leaveType) + '</td>'
+      + '<td>' + escHtml(d.leaveKubun) + '</td>'
+      + '<td>' + escHtml(d.approvedAt) + '</td>'
+      + '<td><button class="btn-sm" onclick="singleApprove2(' + i + ', this)">2次承認</button></td>'
+      + '</tr>';
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function singleApprove2(idx, btn) {
+  if (!selectedApprover2) {
+    alert('2次承認者（電子印）を選択してください。');
+    return;
+  }
+  var d = pending2Data[idx];
+  if (!confirm(d.workerName + 'さんの休暇届（' + d.leaveDate + '）を2次承認しますか？')) return;
+
+  btn.disabled = true;
+  btn.textContent = '処理中...';
+  google.script.run
+    .withSuccessHandler(function(result) {
+      if (result && result.ok) {
+        btn.textContent = '承認済';
+        btn.style.background = '#e6ffed';
+        btn.style.color = '#1f9d55';
+        // 少し待ってからリロード
+        setTimeout(function() { loadPending2(); }, 800);
+      } else {
+        btn.textContent = '失敗';
+        btn.disabled = false;
+      }
+    })
+    .withFailureHandler(function(err) {
+      alert('エラー: ' + err.message);
+      btn.textContent = '2次承認';
+      btn.disabled = false;
+    })
+    .api_approveLeaveRequest2(d.reqId, selectedApprover2);
+}
+
+function toggleSelectAll() {
+  var checked = document.getElementById('selectAll').checked;
+  var boxes = document.querySelectorAll('.row-check');
+  for (var i = 0; i < boxes.length; i++) boxes[i].checked = checked;
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  var boxes = document.querySelectorAll('.row-check:checked');
+  document.getElementById('selectedCount').textContent = boxes.length + '件選択中';
+  updateBatchBtn();
+}
+
+function updateBatchBtn() {
+  var boxes = document.querySelectorAll('.row-check:checked');
+  document.getElementById('batchApproveBtn').disabled = boxes.length === 0 || !selectedApprover2;
+}
+
+function batchApprove2() {
+  if (!selectedApprover2) {
+    alert('2次承認者（電子印）を選択してください。');
+    return;
+  }
+  var boxes = document.querySelectorAll('.row-check:checked');
+  var reqIds = [];
+  for (var i = 0; i < boxes.length; i++) {
+    var idx = Number(boxes[i].dataset.idx);
+    reqIds.push(pending2Data[idx].reqId);
+  }
+  if (!reqIds.length) return;
+  if (!confirm(reqIds.length + '件を一括2次承認しますか？')) return;
+
+  var btn = document.getElementById('batchApproveBtn');
+  btn.disabled = true;
+  btn.textContent = '処理中...';
+
+  google.script.run
+    .withSuccessHandler(function(result) {
+      var okCount = 0;
+      var errCount = 0;
+      if (result && result.results) {
+        for (var i = 0; i < result.results.length; i++) {
+          if (result.results[i].ok) okCount++;
+          else errCount++;
+        }
+      }
+      btn.textContent = '一括2次承認';
+      if (errCount > 0) {
+        alert('完了: ' + okCount + '件成功, ' + errCount + '件失敗');
+      }
+      loadPending2();
+    })
+    .withFailureHandler(function(err) {
+      alert('エラー: ' + err.message);
+      btn.textContent = '一括2次承認';
+      btn.disabled = false;
+    })
+    .api_approveLeaveRequest2Batch(reqIds, selectedApprover2);
+}
+
+// ====== 有給管理 ======
 function loadData() {
   var wrap = document.getElementById('tableWrap');
   wrap.innerHTML = '<div class="loading">読込中...</div>';
@@ -249,10 +451,10 @@ function renderTable(data) {
 }
 
 function renderQuarterCell(q) {
-  if (!q) return '<td><span class="pill">―</span></td>';
-  if (q.taken) return '<td><span class="pill ok">✓</span></td>';
-  if (q.overdue) return '<td><span class="pill danger">✗</span></td>';
-  return '<td><span class="pill">―</span></td>';
+  if (!q) return '<td><span class="pill">&#8213;</span></td>';
+  if (q.taken) return '<td><span class="pill ok">&#10003;</span></td>';
+  if (q.overdue) return '<td><span class="pill danger">&#10007;</span></td>';
+  return '<td><span class="pill">&#8213;</span></td>';
 }
 
 function exportCsv() {
