@@ -481,9 +481,10 @@ function renderTable(data) {
 function renderQuarterCell(q) {
   if (!q) return '<td><span class="pill">―</span></td>';
   if (q.isFuture) return '<td><span class="pill">' + q.periodCount + '</span></td>';
-  if (q.level === 'danger') return '<td><span class="pill danger">' + q.periodCount + '</span></td>';
-  if (q.level === 'warn') return '<td><span class="pill warn">' + q.periodCount + '</span></td>';
-  return '<td><span class="pill ok">' + q.periodCount + '</span></td>';
+  if (q.level === 'danger') return '<td><span class="pill danger">' + q.periodCount + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
+  if (q.level === 'warn') return '<td><span class="pill warn">' + q.periodCount + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
+  if (q.level === 'ok') return '<td><span class="pill ok">' + q.periodCount + '</span></td>';
+  return '<td><span class="pill">' + q.periodCount + '</span></td>';
 }
 
 function exportCsv() {

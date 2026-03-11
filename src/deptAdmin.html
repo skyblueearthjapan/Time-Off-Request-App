@@ -324,7 +324,7 @@ function renderTable(data) {
     else if (d.warnLevel === '警告') rowClass = 'warn-row';
     else if (d.warnLevel === '注意') rowClass = 'caution-row';
 
-    // Quarter cells - 期間内取得回数 + 危険度色
+    // Quarter cells - 期間内取得回数 + 累計での危険度色
     var quarters = d.quarters || [];
     var qHtml = '';
     for (var qi = 0; qi < 5; qi++) {
@@ -334,11 +334,13 @@ function renderTable(data) {
       } else if (q.isFuture) {
         qHtml += '<td class="qcell"><span class="pill">' + q.periodCount + '</span></td>';
       } else if (q.level === 'danger') {
-        qHtml += '<td class="qcell"><span class="pill danger">' + q.periodCount + '</span></td>';
+        qHtml += '<td class="qcell"><span class="pill danger">' + q.periodCount + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
       } else if (q.level === 'warn') {
-        qHtml += '<td class="qcell"><span class="pill warn">' + q.periodCount + '</span></td>';
-      } else {
+        qHtml += '<td class="qcell"><span class="pill warn">' + q.periodCount + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
+      } else if (q.level === 'ok') {
         qHtml += '<td class="qcell"><span class="pill ok">' + q.periodCount + '</span></td>';
+      } else {
+        qHtml += '<td class="qcell"><span class="pill">' + q.periodCount + '</span></td>';
       }
     }
 
