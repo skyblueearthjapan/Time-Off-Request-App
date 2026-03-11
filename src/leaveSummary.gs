@@ -406,10 +406,10 @@ function buildAdminViewData_(depts, fyYear) {
     out[s].currentShortage = maxShortage;
   }
   out.sort(function(a, b) {
-    // 不足数降順（多い人が先頭）
-    if (a.currentShortage !== b.currentShortage) return b.currentShortage - a.currentShortage;
     // 有給取得数昇順（少ない人が先頭）
     if (a.paidCount !== b.paidCount) return a.paidCount - b.paidCount;
+    // 同数なら不足数降順
+    if (a.currentShortage !== b.currentShortage) return b.currentShortage - a.currentShortage;
     var deptCmp = a.deptName.localeCompare(b.deptName, 'ja');
     if (deptCmp !== 0) return deptCmp;
     return a.workerName.localeCompare(b.workerName, 'ja');
