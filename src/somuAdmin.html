@@ -263,7 +263,7 @@ function renderPending2() {
 
   for (var i = 0; i < pending2Data.length; i++) {
     var d = pending2Data[i];
-    html += '<tr>'
+    html += '<tr data-reqid="' + escHtml(d.reqId) + '" style="transition:all .5s ease;">'
       + '<td><input type="checkbox" class="row-check" data-idx="' + i + '" onchange="updateSelectedCount()"></td>'
       + '<td>' + escHtml(d.deptName) + '</td>'
       + '<td>' + escHtml(d.workerName) + '</td>'
@@ -276,6 +276,36 @@ function renderPending2() {
   }
   html += '</tbody></table>';
   wrap.innerHTML = html;
+}
+
+function fadeOutRow(reqId, callback) {
+  var row = document.querySelector('tr[data-reqid="' + reqId + '"]');
+  if (row) {
+    row.style.background = '#e6ffed';
+    setTimeout(function() {
+      row.style.opacity = '0';
+      row.style.transform = 'translateX(40px)';
+      row.style.maxHeight = row.offsetHeight + 'px';
+      row.style.overflow = 'hidden';
+      setTimeout(function() {
+        row.style.maxHeight = '0';
+        row.style.padding = '0';
+        setTimeout(function() {
+          row.remove();
+          // カウント更新
+          var remaining = document.querySelectorAll('tr[data-reqid]').length;
+          document.getElementById('pending2Count').textContent = remaining + '件';
+          if (remaining === 0) {
+            document.getElementById('approval2Wrap').innerHTML = '<div class="loading" style="color:var(--accent);">2次承認待ちの申請はありません</div>';
+            document.getElementById('batchBar').style.display = 'none';
+          }
+          if (callback) callback();
+        }, 300);
+      }, 300);
+    }, 400);
+  } else {
+    if (callback) callback();
+  }
 }
 
 function singleApprove2(idx, btn) {
@@ -291,11 +321,8 @@ function singleApprove2(idx, btn) {
   google.script.run
     .withSuccessHandler(function(result) {
       if (result && result.ok) {
-        btn.textContent = '承認済';
-        btn.style.background = '#e6ffed';
-        btn.style.color = '#1f9d55';
-        // 少し待ってからリロード
-        setTimeout(function() { loadPending2(); }, 800);
+        btn.textContent = '✓';
+        fadeOutRow(d.reqId);
       } else {
         btn.textContent = '失敗';
         btn.disabled = false;
@@ -343,6 +370,10 @@ function batchApprove2() {
 
   var btn = document.getElementById('batchApproveBtn');
   btn.disabled = true;
+  document.getElementById('selectAll').disabled = true;
+  var boxes2 = document.querySelectorAll('.row-check');
+  for (var b = 0; b < boxes2.length; b++) boxes2[b].disabled = true;
+
   var total = reqIds.length;
   var okCount = 0;
   var errCount = 0;
@@ -351,25 +382,30 @@ function batchApprove2() {
   function processNext() {
     if (current >= total) {
       btn.textContent = '一括2次承認';
+      document.getElementById('selectAll').disabled = false;
       if (errCount > 0) {
         alert('完了: ' + okCount + '件成功, ' + errCount + '件失敗');
+        loadPending2();
       }
-      loadPending2();
+      updateBatchBtn();
       return;
     }
     var reqId = reqIds[current];
-    btn.textContent = '処理中... (' + (current + 1) + '/' + total + ')';
+    btn.textContent = '承認中... (' + (current + 1) + '/' + total + ')';
 
     google.script.run
       .withSuccessHandler(function() {
         okCount++;
         current++;
-        processNext();
+        fadeOutRow(reqId, function() { processNext(); });
       })
       .withFailureHandler(function(err) {
         console.error('2次承認エラー: ' + reqId + ' ' + err.message);
         errCount++;
         current++;
+        // エラー行は赤くする
+        var row = document.querySelector('tr[data-reqid="' + reqId + '"]');
+        if (row) { row.style.background = '#ffe0e0'; }
         processNext();
       })
       .api_approveLeaveRequest2(reqId, selectedApprover2);
