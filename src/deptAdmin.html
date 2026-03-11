@@ -276,12 +276,6 @@ function loadData() {
   google.script.run
     .withSuccessHandler(function(result) {
       currentData = result.workers || [];
-      // デバッグ: 最初の1人のquartersを確認
-      if (currentData.length > 0) {
-        var d0 = currentData[0];
-        console.log('FRONTEND DEBUG: ' + d0.workerName + ' quarters=', JSON.stringify(d0.quarters));
-        if (d0.quarters && d0.quarters[0]) console.log('FRONTEND q[0].shortage type=' + typeof d0.quarters[0].shortage + ' val=' + d0.quarters[0].shortage);
-      }
       renderKpi(currentData);
       renderTable(currentData);
     })
@@ -319,7 +313,7 @@ function renderTable(data) {
 
   var html = '<table><thead><tr>'
     + '<th>部署</th><th>氏名</th><th>有給</th>'
-    + '<th>春期<br>(4-6月)<br><span style="font-size:10px;color:var(--muted);">累計1回</span></th><th>夏期<br>(7-8月)<br><span style="font-size:10px;color:var(--muted);">累計2回</span></th><th>秋期<br>(9-11月)<br><span style="font-size:10px;color:var(--muted);">累計3回</span></th><th>冬期<br>(12-2月)<br><span style="font-size:10px;color:var(--muted);">累計4回</span></th><th>年度末<br>(2-3月)<br><span style="font-size:10px;color:var(--muted);">累計5回</span></th>'
+    + '<th>春期<br>(4-6月)<br><span style="font-size:10px;color:var(--muted);">目標1回</span></th><th>夏期<br>(7-8月)<br><span style="font-size:10px;color:var(--muted);">目標2回</span></th><th>秋期<br>(9-11月)<br><span style="font-size:10px;color:var(--muted);">目標3回</span></th><th>冬期<br>(12-2月)<br><span style="font-size:10px;color:var(--muted);">目標4回</span></th><th>年度末<br>(2-3月)<br><span style="font-size:10px;color:var(--muted);">目標5回</span></th>'
     + '<th>振替</th><th>特別</th><th>合計</th><th>最終有給日</th><th>警告</th>'
     + '</tr></thead><tbody>';
 
@@ -330,22 +324,27 @@ function renderTable(data) {
     else if (d.warnLevel === '警告') rowClass = 'warn-row';
     else if (d.warnLevel === '注意') rowClass = 'caution-row';
 
-    // Quarter cells - 期間内取得回数 + 累計での危険度色
-    // shortage（累計不足数）で直接判定。isFuture/isCurrent/isPastはサーバーから受け取る
+    // Quarter cells - 「残X」表示（5 - 累計取得数）で色分け
     var quarters = d.quarters || [];
     var qHtml = '';
     for (var qi = 0; qi < 5; qi++) {
       var q = quarters[qi];
       if (!q) {
         qHtml += '<td class="qcell"><span class="pill">―</span></td>';
-      } else if (q.isFuture) {
-        qHtml += '<td class="qcell"><span class="pill">' + (q.periodCount || 0) + '</span></td>';
-      } else if (Number(q.shortage) >= 2) {
-        qHtml += '<td class="qcell"><span class="pill danger">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
-      } else if (Number(q.shortage) >= 1) {
-        qHtml += '<td class="qcell"><span class="pill warn">' + (q.periodCount || 0) + ' <span style="font-size:10px;">(-' + q.shortage + ')</span></span></td>';
       } else {
-        qHtml += '<td class="qcell"><span class="pill ok">' + (q.periodCount || 0) + '</span></td>';
+        var remaining = Math.max(0, 5 - Number(q.cumulativeCount || 0));
+        var sh = Number(q.shortage || 0);
+        if (q.isFuture) {
+          qHtml += '<td class="qcell"><span class="pill">残' + remaining + '</span></td>';
+        } else if (remaining === 0) {
+          qHtml += '<td class="qcell"><span class="pill ok">達成</span></td>';
+        } else if (sh >= 2) {
+          qHtml += '<td class="qcell"><span class="pill danger">残' + remaining + '</span></td>';
+        } else if (sh >= 1) {
+          qHtml += '<td class="qcell"><span class="pill warn">残' + remaining + '</span></td>';
+        } else {
+          qHtml += '<td class="qcell"><span class="pill ok">残' + remaining + '</span></td>';
+        }
       }
     }
 
