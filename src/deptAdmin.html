@@ -313,7 +313,7 @@ function renderTable(data) {
 
   var html = '<table><thead><tr>'
     + '<th>部署</th><th>氏名</th><th>有給</th>'
-    + '<th>春期<br>(4-6月)</th><th>夏期<br>(7-8月)</th><th>秋期<br>(9-11月)</th><th>冬期<br>(12-2月)</th><th>年度末<br>(2-3月)</th>'
+    + '<th>春期<br>(4-6月)<br><span style="font-size:10px;color:var(--muted);">累計1回</span></th><th>夏期<br>(7-8月)<br><span style="font-size:10px;color:var(--muted);">累計2回</span></th><th>秋期<br>(9-11月)<br><span style="font-size:10px;color:var(--muted);">累計3回</span></th><th>冬期<br>(12-2月)<br><span style="font-size:10px;color:var(--muted);">累計4回</span></th><th>年度末<br>(2-3月)<br><span style="font-size:10px;color:var(--muted);">累計5回</span></th>'
     + '<th>振替</th><th>特別</th><th>合計</th><th>最終有給日</th><th>警告</th>'
     + '</tr></thead><tbody>';
 
@@ -324,19 +324,21 @@ function renderTable(data) {
     else if (d.warnLevel === '警告') rowClass = 'warn-row';
     else if (d.warnLevel === '注意') rowClass = 'caution-row';
 
-    // Quarter pills
+    // Quarter cells - 期間内取得回数 + 危険度色
     var quarters = d.quarters || [];
     var qHtml = '';
     for (var qi = 0; qi < 5; qi++) {
       var q = quarters[qi];
       if (!q) {
         qHtml += '<td class="qcell"><span class="pill">―</span></td>';
-      } else if (q.taken) {
-        qHtml += '<td class="qcell"><span class="pill ok">&#10003;</span></td>';
-      } else if (q.overdue) {
-        qHtml += '<td class="qcell"><span class="pill danger">&#10007;</span></td>';
+      } else if (q.isFuture) {
+        qHtml += '<td class="qcell"><span class="pill">' + q.periodCount + '</span></td>';
+      } else if (q.level === 'danger') {
+        qHtml += '<td class="qcell"><span class="pill danger">' + q.periodCount + '</span></td>';
+      } else if (q.level === 'warn') {
+        qHtml += '<td class="qcell"><span class="pill warn">' + q.periodCount + '</span></td>';
       } else {
-        qHtml += '<td class="qcell"><span class="pill">―</span></td>';
+        qHtml += '<td class="qcell"><span class="pill ok">' + q.periodCount + '</span></td>';
       }
     }
 

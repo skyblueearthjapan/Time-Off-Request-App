@@ -218,6 +218,7 @@ function computeQuarterStatus_(paidLeaveDates, fiscalYear) {
   var fy = Number(fiscalYear);
   var now = new Date();
   var result = [];
+  var cumulativeCount = 0; // 年度通算の有給取得数
 
   for (var i = 0; i < PAID_LEAVE_QUARTERS.length; i++) {
     var q = PAID_LEAVE_QUARTERS[i];
@@ -229,24 +230,45 @@ function computeQuarterStatus_(paidLeaveDates, fiscalYear) {
     var periodEnd = new Date(endYear, q.endMonth - 1, q.endDay, 23, 59, 59);
 
     // 期間内の有給日数をカウント
-    var actualCount = 0;
+    var periodCount = 0;
     for (var j = 0; j < paidLeaveDates.length; j++) {
       var d = paidLeaveDates[j];
       if (d >= periodStart && d <= periodEnd) {
-        actualCount++;
+        periodCount++;
       }
     }
+    cumulativeCount += periodCount;
 
-    var taken = actualCount > 0;
-    var overdue = !taken && now > periodEnd;
+    // 現在この期間内か、過ぎているか、まだ先か
+    var isCurrent = now >= periodStart && now <= periodEnd;
+    var isPast = now > periodEnd;
+    var isFuture = now < periodStart;
+
+    // 累計不足数（targetCount = この期間終了までに必要な累計回数）
+    var shortage = Math.max(0, q.targetCount - cumulativeCount);
+
+    // 危険度判定（現在 or 過去の期間のみ）
+    // shortage >= 2 → danger（赤）, shortage === 1 → warn（黄）, 0 → ok
+    var level = '';
+    if (isCurrent || isPast) {
+      if (shortage >= 2) level = 'danger';
+      else if (shortage === 1) level = 'warn';
+      else level = 'ok';
+    }
 
     result.push({
       id: q.id,
       label: q.label,
       targetCount: q.targetCount,
-      actualCount: actualCount,
-      taken: taken,
-      overdue: overdue,
+      periodCount: periodCount,
+      cumulativeCount: cumulativeCount,
+      shortage: shortage,
+      level: level,
+      taken: periodCount > 0,
+      overdue: shortage > 0 && isPast,
+      isCurrent: isCurrent,
+      isPast: isPast,
+      isFuture: isFuture,
     });
   }
 
@@ -372,14 +394,24 @@ function buildAdminViewData_(depts, fyYear) {
     }
   }
 
-  // 6. ソート: 部署名昇順 → 警告レベル降順（危険>警告>注意>''） → 作業員名昇順
-  var warnOrder = { '危険': 3, '警告': 2, '注意': 1, '': 0 };
+  // 6. 現在期間の累計不足数を算出し、不足が多い人を上位に
+  for (var s = 0; s < out.length; s++) {
+    var qs = out[s].quarters || [];
+    var maxShortage = 0;
+    for (var qi = 0; qi < qs.length; qi++) {
+      if (qs[qi].isCurrent || qs[qi].isPast) {
+        maxShortage = Math.max(maxShortage, qs[qi].shortage);
+      }
+    }
+    out[s].currentShortage = maxShortage;
+  }
   out.sort(function(a, b) {
+    // 不足数降順（多い人が先頭）
+    if (a.currentShortage !== b.currentShortage) return b.currentShortage - a.currentShortage;
+    // 有給取得数昇順（少ない人が先頭）
+    if (a.paidCount !== b.paidCount) return a.paidCount - b.paidCount;
     var deptCmp = a.deptName.localeCompare(b.deptName, 'ja');
     if (deptCmp !== 0) return deptCmp;
-    var wA = warnOrder[a.warnLevel] || 0;
-    var wB = warnOrder[b.warnLevel] || 0;
-    if (wA !== wB) return wB - wA; // 降順
     return a.workerName.localeCompare(b.workerName, 'ja');
   });
 
