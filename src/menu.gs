@@ -334,9 +334,10 @@ function formatHeaderRow_(sh) {
 
 function setupAllTriggers() {
   setupSyncTrigger_();
-  setupWarnMailTrigger_();
-  setupNotifyTriggers_();
-  Logger.log('全トリガーをセットアップしました。');
+  // メール送信は統合メール通知システムに移行済み
+  // setupWarnMailTrigger_();
+  // setupNotifyTriggers_();
+  Logger.log('全トリガーをセットアップしました（メールは統合メール側で管理）。');
 }
 
 /**
