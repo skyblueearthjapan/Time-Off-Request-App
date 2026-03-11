@@ -441,7 +441,7 @@ function renderTable(data) {
 
   var html = '<table><thead><tr>'
     + '<th>部署</th><th>氏名</th><th>有給</th>'
-    + '<th>春期(3/16-6月)<br><span style="font-size:10px;color:var(--muted);">目標1回</span></th><th>夏期(7-8月)<br><span style="font-size:10px;color:var(--muted);">目標2回</span></th><th>秋期(9-11月)<br><span style="font-size:10px;color:var(--muted);">目標3回</span></th><th>冬期(12-2月)<br><span style="font-size:10px;color:var(--muted);">目標4回</span></th><th>年度末(2-3月)<br><span style="font-size:10px;color:var(--muted);">目標5回</span></th>'
+    + '<th>春期(3/16-6月)<br><span style="font-size:10px;color:var(--muted);">目標1回</span></th><th>夏期(7-8月)<br><span style="font-size:10px;color:var(--muted);">目標2回</span></th><th>秋期(9-11月)<br><span style="font-size:10px;color:var(--muted);">目標3回</span></th><th>冬期(12-2/15)<br><span style="font-size:10px;color:var(--muted);">目標4回</span></th><th>年度末(2/16-3/15)<br><span style="font-size:10px;color:var(--muted);">目標5回</span></th>'
     + '<th>振替</th><th>特別</th><th>合計</th><th>最終有給日</th><th>警告</th>'
     + '</tr></thead><tbody>';
 
@@ -492,7 +492,7 @@ function renderQuarterCell(q) {
 
 function exportCsv() {
   if (!currentData.length) { alert('データがありません'); return; }
-  var headers = ['部署','氏名','有給回数','有給半日回数','春期(3/16-6月)','夏期(7-8月)','秋期(9-11月)','冬期(12-2月)','年度末(2-3月)','振替回数','特別回数','合計回数','最終有給日','警告レベル'];
+  var headers = ['部署','氏名','有給回数','有給半日回数','春期(3/16-6月)','夏期(7-8月)','秋期(9-11月)','冬期(12-2/15)','年度末(2/16-3/15)','振替回数','特別回数','合計回数','最終有給日','警告レベル'];
   var lines = [headers.join(',')];
 
   currentData.forEach(function(d) {

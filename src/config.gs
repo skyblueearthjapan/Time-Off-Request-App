@@ -53,8 +53,8 @@ var PAID_LEAVE_QUARTERS = [
   { id: 'Q1',      label: '春期(3/16-6月)', startMonth: 3, startDay: 16, endMonth: 6,  endDay: 30, targetCount: 1 },
   { id: 'SUMMER',  label: '夏期(7-8月)',   startMonth: 7, startDay: 1,  endMonth: 8,  endDay: 31, targetCount: 2 },
   { id: 'Q3',      label: '秋期(9-11月)',  startMonth: 9, startDay: 1,  endMonth: 11, endDay: 30, targetCount: 3 },
-  { id: 'WINTER',  label: '冬期(12-2月)',  startMonth: 12, startDay: 1, endMonth: 2,  endDay: 15, targetCount: 4 },
-  { id: 'YEAREND', label: '年度末(2-3月)', startMonth: 2, startDay: 16, endMonth: 3,  endDay: 15, targetCount: 5 },
+  { id: 'WINTER',  label: '冬期(12-2/15)',  startMonth: 12, startDay: 1, endMonth: 2,  endDay: 15, targetCount: 4 },
+  { id: 'YEAREND', label: '年度末(2/16-3/15)', startMonth: 2, startDay: 16, endMonth: 3,  endDay: 15, targetCount: 5 },
 ];
 
 // 警告メール送信日（月初 or 期限翌日）
