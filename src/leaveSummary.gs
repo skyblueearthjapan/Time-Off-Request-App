@@ -129,8 +129,8 @@ function computeWarnLevel_(paidCount, fiscalYear) {
     var deadlineMonth = w.deadline.month;
     var deadlineDay = w.deadline.day;
 
-    // 年度内の日付を算出（4月〜12月はfy年、1月〜3月はfy+1年）
-    var deadlineYear = deadlineMonth >= 4 ? fy : fy + 1;
+    // 年度内の日付を算出（3/16以降はfy年、1月〜3/15はfy+1年）
+    var deadlineYear = (deadlineMonth > 3 || (deadlineMonth === 3 && deadlineDay >= 16)) ? fy : fy + 1;
     var deadlineDate = new Date(deadlineYear, deadlineMonth - 1, deadlineDay, 23, 59, 59);
 
     // まだ期限が来ていない場合はスキップ
@@ -223,9 +223,9 @@ function computeQuarterStatus_(paidLeaveDates, fiscalYear) {
   for (var i = 0; i < PAID_LEAVE_QUARTERS.length; i++) {
     var q = PAID_LEAVE_QUARTERS[i];
 
-    // 期間の開始日・終了日を算出（4-12月はfy年、1-3月はfy+1年）
-    var startYear = q.startMonth >= 4 ? fy : fy + 1;
-    var endYear = q.endMonth >= 4 ? fy : fy + 1;
+    // 期間の開始日・終了日を算出（3/16以降はfy年、1月〜3/15はfy+1年）
+    var startYear = (q.startMonth > 3 || (q.startMonth === 3 && q.startDay >= 16)) ? fy : fy + 1;
+    var endYear = (q.endMonth > 3 || (q.endMonth === 3 && q.endDay >= 16)) ? fy : fy + 1;
     var periodStart = new Date(startYear, q.startMonth - 1, q.startDay, 0, 0, 0);
     var periodEnd = new Date(endYear, q.endMonth - 1, q.endDay, 23, 59, 59);
 

@@ -45,12 +45,12 @@ const PAID_LEAVE_WARN = [
   { deadline: { month: 8, day: 31 }, required: 2, label: '8月末' },
   { deadline: { month: 12, day: 31 }, required: 3, label: '12月末' },
   { deadline: { month: 2, day: 15 }, required: 4, label: '2/15' },
-  { deadline: { month: 3, day: 31 }, required: 5, label: '年度末' },
+  { deadline: { month: 3, day: 15 }, required: 5, label: '年度末' },
 ];
 
 // 有給取得義務期間（年5回の計画取得）
 var PAID_LEAVE_QUARTERS = [
-  { id: 'Q1',      label: '春期(4-6月)',   startMonth: 4, startDay: 1,  endMonth: 6,  endDay: 30, targetCount: 1 },
+  { id: 'Q1',      label: '春期(3/16-6月)', startMonth: 3, startDay: 16, endMonth: 6,  endDay: 30, targetCount: 1 },
   { id: 'SUMMER',  label: '夏期(7-8月)',   startMonth: 7, startDay: 1,  endMonth: 8,  endDay: 31, targetCount: 2 },
   { id: 'Q3',      label: '秋期(9-11月)',  startMonth: 9, startDay: 1,  endMonth: 11, endDay: 30, targetCount: 3 },
   { id: 'WINTER',  label: '冬期(12-2月)',  startMonth: 12, startDay: 1, endMonth: 2,  endDay: 15, targetCount: 4 },

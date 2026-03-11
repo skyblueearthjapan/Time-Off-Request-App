@@ -35,8 +35,9 @@ function computeFiscalYear_(dateObj) {
   var d = dateObj || new Date();
   var year = d.getFullYear();
   var month = d.getMonth() + 1; // 1-12
-  // 4月始まり: 1-3月は前年度
-  if (month < 4) {
+  var day = d.getDate();
+  // 3/16始まり: 1月〜3/15は前年度
+  if (month < 3 || (month === 3 && day < 16)) {
     return year - 1;
   }
   return year;

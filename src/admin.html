@@ -149,7 +149,8 @@ window.addEventListener('DOMContentLoaded', function() {
   // 年度セレクト初期化
   var fySelect = document.getElementById('fySelect');
   var now = new Date();
-  var currentFy = now.getMonth() + 1 < 4 ? now.getFullYear() - 1 : now.getFullYear();
+  var _m = now.getMonth() + 1, _d = now.getDate();
+  var currentFy = (_m < 3 || (_m === 3 && _d < 16)) ? now.getFullYear() - 1 : now.getFullYear();
   for (var y = currentFy; y >= currentFy - 2; y--) {
     var opt = document.createElement('option');
     opt.value = y;
