@@ -297,6 +297,30 @@ window.addEventListener('DOMContentLoaded', function() {
     }
   }).api_canAccessAdmin();
 
+  // 部署管理リンク表示判定
+  google.script.run.withSuccessHandler(function(isDeptApprover) {
+    if (isDeptApprover) {
+      var link = document.createElement('a');
+      link.href = APP_URL + '?page=deptAdmin';
+      link.target = '_top';
+      link.className = 'nav-link';
+      link.textContent = '部署管理';
+      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
+    }
+  }).api_isDeptApprover();
+
+  // 総務管理リンク表示判定
+  google.script.run.withSuccessHandler(function(canAccess) {
+    if (canAccess) {
+      var link = document.createElement('a');
+      link.href = APP_URL + '?page=somuAdmin';
+      link.target = '_top';
+      link.className = 'nav-link';
+      link.textContent = '総務管理';
+      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
+    }
+  }).api_isSomu();
+
   // 部署一覧ロード
   google.script.run.withSuccessHandler(function(depts) {
     var sel = document.getElementById('deptSelect');

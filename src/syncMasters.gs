@@ -97,6 +97,14 @@ function syncAllMasters() {
       log.push('ERROR M_STAMP: ' + stampErr.message);
     }
 
+    // 部署承認者マスタも同期（別ソースSS）
+    try {
+      syncDeptApprovers();
+      log.push('OK DeptApprovers -> M_DEPT_APPROVERS');
+    } catch (deptErr) {
+      log.push('ERROR M_DEPT_APPROVERS: ' + deptErr.message);
+    }
+
     var summary = 'syncAllMasters:\n' + log.join('\n');
     Logger.log(summary);
     console.log(summary);
@@ -194,6 +202,48 @@ function syncStampMaster() {
 
   SpreadsheetApp.flush();
   var msg = 'syncStampMaster: OK (' + data.length + ' rows)';
+  Logger.log(msg);
+  console.log(msg);
+}
+
+/**
+ * 部署承認者マスタを外部スプレッドシート → M_DEPT_APPROVERS へ同期（全置換）。
+ * 外部SS（残業・休日出勤申請app）の DeptApprovers シートから取得
+ */
+function syncDeptApprovers() {
+  var settings = getSettings_();
+  var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
+  if (!sourceId) {
+    sourceId = '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
+  }
+
+  var srcSS = SpreadsheetApp.openById(sourceId);
+  var srcSh = srcSS.getSheetByName('DeptApprovers');
+  if (!srcSh) throw new Error('元シートなし: DeptApprovers');
+
+  var data = readSheetData_(srcSh);
+  if (!data || !data.length) throw new Error('DeptApproversが空です');
+
+  data = compactRows_(data);
+
+  // M_DEPT_APPROVERSシートがなければ作成
+  var dstSS = getDb_();
+  var dstSh = dstSS.getSheetByName(SHEET.DEPT_APPROVERS);
+  if (!dstSh) {
+    dstSh = dstSS.insertSheet(SHEET.DEPT_APPROVERS);
+  }
+
+  try {
+    replaceMasterData_(dstSh, data);
+  } catch (writeErr) {
+    console.warn('replaceMasterData_ failed for M_DEPT_APPROVERS, recreating: ' + writeErr.message);
+    dstSS.deleteSheet(dstSh);
+    dstSh = dstSS.insertSheet(SHEET.DEPT_APPROVERS);
+    dstSh.getRange(1, 1, data.length, data[0].length).setValues(data);
+  }
+
+  SpreadsheetApp.flush();
+  var msg = 'syncDeptApprovers: OK (' + data.length + ' rows)';
   Logger.log(msg);
   console.log(msg);
 }

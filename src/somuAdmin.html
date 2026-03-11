@@ -1,0 +1,309 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{--bg1:#eaf6ff;--bg2:#f7fffb;--accent:#1f9d55;--accent2:#0ea5e9;--text:#0b2545;--muted:#5c6b7a;--card:#ffffffcc;--line:#d7e7f5;--danger:#ff5a5f;--warn:#ffb020;}
+    *{box-sizing:border-box;}
+    body{
+      margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      color:var(--text);
+      background:radial-gradient(1100px 600px at 18% 0%,var(--bg1),transparent),
+        radial-gradient(1100px 600px at 92% 20%,var(--bg2),transparent),
+        linear-gradient(180deg,#ffffff,#f3fbff);
+    }
+    header{
+      padding:18px 22px;display:flex;align-items:flex-end;justify-content:space-between;
+      border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+      position:sticky;top:0;background:rgba(255,255,255,.55);z-index:10;
+    }
+    .title{font-weight:900;letter-spacing:.06em;font-size:18px;}
+    .sub{opacity:.8;font-size:12px;color:var(--muted);}
+    .wrap{padding:18px 22px;max-width:1200px;margin:0 auto;}
+    .card{
+      background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:14px 18px;box-shadow:0 10px 30px rgba(10,40,80,.06);margin-bottom:14px;
+    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    button{
+      padding:10px 16px;border-radius:12px;border:0;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:800;cursor:pointer;font-size:14px;
+      box-shadow:0 10px 22px rgba(31,157,85,.20);
+    }
+    .btn-blue{background:linear-gradient(135deg,var(--accent2),#38bdf8);box-shadow:0 10px 22px rgba(14,165,233,.20);}
+    .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
+    .ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;}
+    .pill{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#fff;display:inline-block;}
+    .danger{border-color:#ffb3b3;background:#fff0f0;color:#7a0b0b;}
+    .warn{border-color:#ffd29e;background:#fff6eb;color:#7a4a0b;}
+    .ok{border-color:#bfe9d0;background:#f0fff6;color:#0b5a2b;}
+    .info{border-color:#b3d4ff;background:#f0f7ff;color:#0b2a5a;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;}
+    th{font-size:12px;color:var(--muted);}
+    tr.warn-row{background:#fff8ee;}
+    tr.danger-row{background:#fff0f0;}
+    a{color:var(--accent2);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    .nav-link{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--text);}
+    .nav-link:hover{background:var(--bg1);text-decoration:none;}
+    .portal-link{
+      font-size:13px;padding:6px 14px;border-radius:8px;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:700;text-decoration:none;
+    }
+    .portal-link:hover{opacity:.9;text-decoration:none;}
+    .loading{text-align:center;padding:30px;color:var(--muted);}
+    select{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-size:14px;font-weight:700;min-width:160px;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+    .kpi-card{
+      background:var(--card);border:1px solid var(--line);border-radius:14px;
+      padding:14px;text-align:center;
+    }
+    .kpi-label{font-size:12px;color:var(--muted);margin-bottom:4px;}
+    .kpi-value{font-size:24px;font-weight:900;}
+    .kpi-value.danger{color:var(--danger);}
+    .kpi-value.warn{color:var(--warn);}
+    .table-scroll{overflow-x:auto;}
+    @media(max-width:640px){
+      header{flex-direction:column;align-items:flex-start;gap:8px;}
+      .wrap{padding:12px 10px;}
+      .kpi-grid{grid-template-columns:1fr 1fr;}
+      table{font-size:12px;}
+      th,td{padding:8px 4px;}
+      select{min-width:auto;width:100%;}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="title">総務管理ダッシュボード</div>
+      <div class="sub">全社 有給取得義務管理</div>
+    </div>
+    <div class="row">
+      <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOPへ</a>
+      <a href="<?= APP_URL ?>?page=deptAdmin" target="_top" class="nav-link">部署管理</a>
+      <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- フィルタ -->
+    <div class="card" style="padding:12px 16px;">
+      <div class="row">
+        <div>
+          <label style="font-weight:700;font-size:13px;">年度：</label>
+          <select id="fySelect"></select>
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:13px;">部署：</label>
+          <select id="deptFilter"><option value="ALL">全部署</option></select>
+        </div>
+        <button class="btn-sm btn-blue" onclick="loadData()">更新</button>
+        <button class="btn-sm ghost" onclick="exportCsv()">CSVエクスポート</button>
+      </div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card"><div class="kpi-label">対象者数</div><div class="kpi-value" id="kpiTotal">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">有給未達者</div><div class="kpi-value danger" id="kpiWarn">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">危険レベル</div><div class="kpi-value danger" id="kpiDanger">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均有給回数</div><div class="kpi-value" id="kpiAvg">-</div></div>
+    </div>
+
+    <!-- テーブル -->
+    <div class="card">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">有給取得義務 管理一覧</div>
+      <div class="table-scroll" id="tableWrap"><div class="loading">読込中...</div></div>
+    </div>
+  </div>
+
+<script>
+var APP_URL = '<?= APP_URL ?>';
+var PORTAL_URL = '<?= PORTAL_URL ?>';
+var currentData = [];
+
+window.addEventListener('DOMContentLoaded', function() {
+  if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
+
+  // 年度セレクト初期化
+  var fySelect = document.getElementById('fySelect');
+  var now = new Date();
+  var currentFy = now.getMonth() + 1 < 4 ? now.getFullYear() - 1 : now.getFullYear();
+  for (var y = currentFy + 2; y >= currentFy - 2; y--) {
+    var opt = document.createElement('option');
+    opt.value = y;
+    opt.textContent = y + '年度';
+    if (y === currentFy) opt.selected = true;
+    fySelect.appendChild(opt);
+  }
+
+  // 部署フィルタ読込
+  google.script.run.withSuccessHandler(function(depts) {
+    var sel = document.getElementById('deptFilter');
+    depts.forEach(function(d) {
+      var opt = document.createElement('option');
+      opt.value = d.deptId;
+      opt.textContent = d.deptName;
+      sel.appendChild(opt);
+    });
+  }).api_getDeptList();
+
+  // 部署変更時に自動リロード
+  document.getElementById('deptFilter').addEventListener('change', function() {
+    loadData();
+  });
+
+  loadData();
+});
+
+function loadData() {
+  var wrap = document.getElementById('tableWrap');
+  wrap.innerHTML = '<div class="loading">読込中...</div>';
+  var fy = Number(document.getElementById('fySelect').value);
+  var deptFilter = document.getElementById('deptFilter').value;
+
+  google.script.run.withSuccessHandler(function(data) {
+    currentData = data;
+    renderKpi(data);
+    renderTable(data);
+  }).withFailureHandler(function(err) {
+    wrap.innerHTML = '<div class="loading" style="color:var(--danger);">エラー: ' + escHtml(err.message) + '</div>';
+  }).api_getSomuAdminView(fy, deptFilter);
+}
+
+function renderKpi(data) {
+  var total = data.length;
+  var warnCount = 0;
+  var dangerCount = 0;
+  var paidSum = 0;
+
+  data.forEach(function(d) {
+    paidSum += (d.paidCount || 0);
+    if (d.warnLevel !== '') warnCount++;
+    if (d.warnLevel === '危険') dangerCount++;
+  });
+
+  document.getElementById('kpiTotal').textContent = total;
+  document.getElementById('kpiWarn').textContent = warnCount;
+  document.getElementById('kpiDanger').textContent = dangerCount;
+  document.getElementById('kpiAvg').textContent = total > 0 ? (paidSum / total).toFixed(1) : '-';
+}
+
+function renderTable(data) {
+  var wrap = document.getElementById('tableWrap');
+  if (!data.length) {
+    wrap.innerHTML = '<div class="loading">データなし</div>';
+    return;
+  }
+
+  var html = '<table><thead><tr>'
+    + '<th>部署</th><th>氏名</th><th>有給</th>'
+    + '<th>Q1(4-6月)</th><th>夏季(7-8月)</th><th>Q3(9-11月)</th><th>冬季(12-2月)</th><th>年度末(2-3月)</th>'
+    + '<th>振替</th><th>特別</th><th>合計</th><th>最終有給日</th><th>警告</th>'
+    + '</tr></thead><tbody>';
+
+  data.forEach(function(d) {
+    var rowClass = '';
+    if (d.warnLevel === '危険') rowClass = 'danger-row';
+    else if (d.warnLevel === '警告' || d.warnLevel === '注意') rowClass = 'warn-row';
+
+    var warnPill = '';
+    if (d.warnLevel === '危険') warnPill = '<span class="pill danger">' + escHtml(d.warnLevel) + '</span>';
+    else if (d.warnLevel === '警告') warnPill = '<span class="pill warn">' + escHtml(d.warnLevel) + '</span>';
+    else if (d.warnLevel === '注意') warnPill = '<span class="pill info">' + escHtml(d.warnLevel) + '</span>';
+    else warnPill = '<span class="pill ok">OK</span>';
+
+    var quarters = d.quarters || [];
+
+    html += '<tr class="' + rowClass + '">'
+      + '<td>' + escHtml(d.deptName) + '</td>'
+      + '<td>' + escHtml(d.workerName) + '</td>'
+      + '<td>' + d.paidCount + (d.paidHalfCount > 0 ? ' <span style="font-size:11px;color:var(--muted);">(' + d.paidHalfCount + '半)</span>' : '') + '</td>'
+      + renderQuarterCell(quarters[0])
+      + renderQuarterCell(quarters[1])
+      + renderQuarterCell(quarters[2])
+      + renderQuarterCell(quarters[3])
+      + renderQuarterCell(quarters[4])
+      + '<td>' + d.substituteCount + '</td>'
+      + '<td>' + d.specialCount + '</td>'
+      + '<td style="font-weight:700;">' + d.totalCount + '</td>'
+      + '<td>' + (d.lastPaidDate || '-') + '</td>'
+      + '<td>' + warnPill + '</td>'
+      + '</tr>';
+  });
+
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderQuarterCell(q) {
+  if (!q) return '<td><span class="pill">―</span></td>';
+  if (q.taken) return '<td><span class="pill ok">✓</span></td>';
+  if (q.overdue) return '<td><span class="pill danger">✗</span></td>';
+  return '<td><span class="pill">―</span></td>';
+}
+
+function exportCsv() {
+  if (!currentData.length) { alert('データがありません'); return; }
+  var headers = ['部署','氏名','有給回数','有給半日回数','Q1(4-6月)','夏季(7-8月)','Q3(9-11月)','冬季(12-2月)','年度末(2-3月)','振替回数','特別回数','合計回数','最終有給日','警告レベル'];
+  var lines = [headers.join(',')];
+
+  currentData.forEach(function(d) {
+    var quarters = d.quarters || [];
+    lines.push([
+      csvEsc(d.deptName),
+      csvEsc(d.workerName),
+      d.paidCount,
+      d.paidHalfCount,
+      quarterText(quarters[0]),
+      quarterText(quarters[1]),
+      quarterText(quarters[2]),
+      quarterText(quarters[3]),
+      quarterText(quarters[4]),
+      d.substituteCount,
+      d.specialCount,
+      d.totalCount,
+      csvEsc(d.lastPaidDate || ''),
+      csvEsc(d.warnLevel || 'OK')
+    ].join(','));
+  });
+
+  var csv = lines.join('\n');
+  var bom = '\uFEFF';
+  var blob = new Blob([bom + csv], {type:'text/csv;charset=utf-8;'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = '有給取得管理_' + document.getElementById('fySelect').value + '年度.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function quarterText(q) {
+  if (!q) return '―';
+  if (q.taken) return '✓';
+  if (q.overdue) return '✗';
+  return '―';
+}
+
+function csvEsc(s) {
+  s = String(s || '');
+  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

@@ -40,6 +40,36 @@ function doGet(e) {
         .setTitle('休暇届 サイン')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
+    case 'deptAdmin':
+      // 部署承認者チェック
+      if (!isDeptApprover_()) {
+        var noAuth = HtmlService.createTemplateFromFile('no_auth');
+        noAuth.message = 'このページは部署承認者のみアクセスできます。M_DEPT_APPROVERSに登録があるか確認してください。';
+        noAuth.APP_URL = appUrl;
+        return noAuth.evaluate().setTitle('アクセス権限なし')
+          .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      }
+      var daTpl = HtmlService.createTemplateFromFile('deptAdmin');
+      daTpl.APP_URL = appUrl;
+      daTpl.PORTAL_URL = portalUrl;
+      return daTpl.evaluate().setTitle('休暇届 部署管理')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
+    case 'somuAdmin':
+      // 総務・管理者チェック
+      if (!isSomu_() && !isAdmin_()) {
+        var noAuth2 = HtmlService.createTemplateFromFile('no_auth');
+        noAuth2.message = 'このページは総務部・管理者のみアクセスできます。';
+        noAuth2.APP_URL = appUrl;
+        return noAuth2.evaluate().setTitle('アクセス権限なし')
+          .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      }
+      var saTpl = HtmlService.createTemplateFromFile('somuAdmin');
+      saTpl.APP_URL = appUrl;
+      saTpl.PORTAL_URL = portalUrl;
+      return saTpl.evaluate().setTitle('休暇届 総務管理')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
     default: // 'top'
       var topTpl = HtmlService.createTemplateFromFile('top');
       topTpl.APP_URL = appUrl;
@@ -64,6 +94,7 @@ function onOpen() {
     .addItem('マスタ同期（手動実行）', 'syncAllMasters')
     .addItem('カレンダー同期（手動実行）', 'syncCalendarMaster')
     .addItem('スタンプ同期（手動実行）', 'syncStampMaster')
+    .addItem('部署承認者同期（手動実行）', 'syncDeptApprovers')
     .addItem('サマリー再構築', 'rebuildLeaveSummary')
     .addSeparator()
     .addItem('有給警告メール送信（手動）', 'checkAndSendWarnMails')
@@ -198,7 +229,21 @@ function setupAllSheets() {
     skipped.push('M_STAMP（既存）');
   }
 
-  // ---------- 6. T_LEAVE_REQUEST ----------
+  // ---------- 6. M_DEPT_APPROVERS ----------
+  var deptApSh = ensureSheet_(ss, 'M_DEPT_APPROVERS');
+  if (deptApSh.getLastRow() < 1) {
+    var deptApHeader = [['dept', 'approverEmails', 'approverName']];
+    deptApSh.getRange(1, 1, 1, 3).setValues(deptApHeader);
+    formatHeaderRow_(deptApSh);
+    deptApSh.setColumnWidth(1, 150);
+    deptApSh.setColumnWidth(2, 300);
+    deptApSh.setColumnWidth(3, 150);
+    created.push('M_DEPT_APPROVERS');
+  } else {
+    skipped.push('M_DEPT_APPROVERS（既存）');
+  }
+
+  // ---------- T_LEAVE_REQUEST ----------
   var reqSh = ensureSheet_(ss, 'T_LEAVE_REQUEST');
   if (reqSh.getLastRow() < 1) {
     var reqHeader = [[
