@@ -50,11 +50,11 @@ const PAID_LEAVE_WARN = [
 
 // 有給取得義務期間（年5回の計画取得）
 var PAID_LEAVE_QUARTERS = [
-  { id: 'Q1',      label: '4-6月(1回目)',  startMonth: 4, startDay: 1,  endMonth: 6,  endDay: 30, targetCount: 1 },
-  { id: 'SUMMER',  label: '7-8月(2回目)',  startMonth: 7, startDay: 1,  endMonth: 8,  endDay: 31, targetCount: 2 },
-  { id: 'Q3',      label: '9-11月(3回目)', startMonth: 9, startDay: 1,  endMonth: 11, endDay: 30, targetCount: 3 },
-  { id: 'WINTER',  label: '12-2月(4回目)', startMonth: 12, startDay: 1, endMonth: 2,  endDay: 15, targetCount: 4 },
-  { id: 'YEAREND', label: '2-3月(5回目)',  startMonth: 2, startDay: 16, endMonth: 3,  endDay: 15, targetCount: 5 },
+  { id: 'Q1',      label: '春期(4-6月)',   startMonth: 4, startDay: 1,  endMonth: 6,  endDay: 30, targetCount: 1 },
+  { id: 'SUMMER',  label: '夏期(7-8月)',   startMonth: 7, startDay: 1,  endMonth: 8,  endDay: 31, targetCount: 2 },
+  { id: 'Q3',      label: '秋期(9-11月)',  startMonth: 9, startDay: 1,  endMonth: 11, endDay: 30, targetCount: 3 },
+  { id: 'WINTER',  label: '冬期(12-2月)',  startMonth: 12, startDay: 1, endMonth: 2,  endDay: 15, targetCount: 4 },
+  { id: 'YEAREND', label: '年度末(2-3月)', startMonth: 2, startDay: 16, endMonth: 3,  endDay: 15, targetCount: 5 },
 ];
 
 // 警告メール送信日（月初 or 期限翌日）
