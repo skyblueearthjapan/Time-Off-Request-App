@@ -378,6 +378,11 @@ function buildAdminViewData_(depts, fyYear) {
       var dates = paidDatesByWorker[wid] || [];
       var quarters = computeQuarterStatus_(dates, fy);
 
+      // デバッグ: 最初の3人のquartersをログ出力
+      if (out.length < 3) {
+        console.log('DEBUG quarters: ' + worker.workerName + ' wid=' + wid + ' dates=' + dates.length + ' quarters=' + JSON.stringify(quarters));
+      }
+
       out.push({
         deptName: deptName,
         workerId: wid,
