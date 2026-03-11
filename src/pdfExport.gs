@@ -133,7 +133,6 @@ function generateLeavePdf_(reqId, approverEmail) {
   //   GASスクリプトロックは再入不可のため、ここでは取得しない。
 
   var tmpSs = null;
-  var tmpStampFileIds = []; // IMAGE数式用一時ファイルのクリーンアップ用
   try {
     // 一時スプレッドシートを新規作成（テンプレートコピー不要）
     tmpSs = SpreadsheetApp.create('TMP_PDF_' + reqId + '_' + fmtDate_(new Date(), 'yyyyMMdd_HHmmss'));
@@ -141,7 +140,7 @@ function generateLeavePdf_(reqId, approverEmail) {
     sheet.setName('休暇届');
 
     // シート構築＋データ書込み（IMAGE数式での印影挿入含む）
-    tmpStampFileIds = buildLeavePdfSheet_(sheet, reqData, approverEmail);
+    buildLeavePdfSheet_(sheet, reqData, approverEmail);
     SpreadsheetApp.flush();
     // IMAGE数式がレンダリングされるまで待機
     Utilities.sleep(3000);
@@ -175,11 +174,6 @@ function generateLeavePdf_(reqId, approverEmail) {
     if (tmpSs) {
       try { DriveApp.getFileById(tmpSs.getId()).setTrashed(true); }
       catch (e) { console.error('一時SS削除エラー: ' + e.message); }
-    }
-    // IMAGE数式用の一時スタンプファイルを削除
-    for (var ti = 0; ti < tmpStampFileIds.length; ti++) {
-      try { DriveApp.getFileById(tmpStampFileIds[ti]).setTrashed(true); }
-      catch (e) { console.error('一時スタンプ削除エラー: ' + e.message); }
     }
   }
 }
@@ -470,14 +464,13 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
       console.log('電子印FileId: ' + stampFileId);
 
       if (stampFileId) {
-        // 一時ファイルを作成してIMAGE数式で参照（PDFエクスポートに確実に含まれる）
-        var tmpId = createTmpStampForImageFormula_(stampFileId);
-        if (tmpId) {
-          tmpStampFileIds.push(tmpId);
-          var imageUrl = 'https://drive.google.com/uc?export=view&id=' + tmpId;
+        // 元ファイルを共有設定してIMAGE数式で直接参照（blob操作なし）
+        var readyId = prepareStampForImageFormula_(stampFileId);
+        if (readyId) {
+          var imageUrl = 'https://drive.google.com/uc?export=view&id=' + readyId;
           sheet.getRange('G24').setFormula('=IMAGE("' + imageUrl + '")');
           approverStampInserted = true;
-          console.log('電子印IMAGE数式挿入成功: G24, tmpFileId=' + tmpId);
+          console.log('電子印IMAGE数式挿入成功: G24, fileId=' + readyId);
         }
       } else {
         console.warn('電子印FileIdが空です。M_STAMPにメール=' + stampEmail + 'の登録があるか確認してください。');
@@ -510,8 +503,6 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
     sheet.hideRows(31, sheet.getMaxRows() - 30);
   }
 
-  // クリーンアップ用に一時ファイルIDを返す
-  return tmpStampFileIds;
 }
 
 // ====== ヘルパー関数 ======
@@ -627,19 +618,24 @@ function getResizedStampBlob_(fileId, originalBlob) {
  * @param {string} stampFileId - 元の電子印DriveファイルID
  * @return {string|null} 一時ファイルID（クリーンアップ用）、失敗時null
  */
-function createTmpStampForImageFormula_(stampFileId) {
+/**
+ * スタンプファイルをIMAGE数式で使えるように共有設定する
+ * blob操作を一切行わず、元ファイルの共有設定のみ変更
+ * @param {string} stampFileId - DriveファイルID
+ * @return {string|null} 使用するファイルID（成功時）、失敗時null
+ */
+function prepareStampForImageFormula_(stampFileId) {
   try {
     var stampFile = DriveApp.getFileById(stampFileId);
     console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ', size=' + stampFile.getSize() + ')');
 
-    // makeCopy() でDriveファイルを直接コピー（blob不要、サイズ制限なし）
-    // IMAGE()数式はブラウザ/Sheets側で描画するため2MB制限の影響を受けない
-    var tmpFile = stampFile.makeCopy('tmp_stamp_' + stampFileId);
-    tmpFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-    console.log('一時スタンプファイル作成: id=' + tmpFile.getId());
-    return tmpFile.getId();
+    // 元ファイルを「リンクを知っている全員」に共有設定
+    // blob操作なし → 2MB制限の影響を完全に回避
+    stampFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    console.log('電子印共有設定完了: id=' + stampFileId);
+    return stampFileId;
   } catch (e) {
-    console.error('一時スタンプ作成エラー: ' + e.message + '\n' + e.stack);
+    console.error('電子印共有設定エラー: ' + e.message + '\n' + e.stack);
     return null;
   }
 }
@@ -664,14 +660,14 @@ function pdfInsertSignAsFormula_(sheet, imageUrl, cellRange) {
     return null;
   }
 
-  // サイン画像から一時公開ファイルを作成
-  var tmpId = createTmpStampForImageFormula_(fileId);
-  if (tmpId) {
-    var url = 'https://drive.google.com/uc?export=view&id=' + tmpId;
+  // サイン画像を共有設定してIMAGE数式で参照（blob操作なし）
+  var readyId = prepareStampForImageFormula_(fileId);
+  if (readyId) {
+    var url = 'https://drive.google.com/uc?export=view&id=' + readyId;
     sheet.getRange(cellRange).setFormula('=IMAGE("' + url + '")');
     console.log('サイン画像IMAGE数式挿入成功: ' + cellRange);
   }
-  return tmpId;
+  return null; // 元ファイル使用のため一時ファイルクリーンアップ不要
 }
 
 // ====== PDFエクスポート ======
