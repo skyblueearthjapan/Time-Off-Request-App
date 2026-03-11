@@ -115,6 +115,8 @@
       <div class="sub">休暇届の申請と予定一覧</div>
     </div>
     <div class="row" id="navLinks">
+      <a href="<?= APP_URL ?>?page=deptAdmin" target="_top" class="nav-link" id="navDept" style="display:none;">部署管理</a>
+      <a href="<?= APP_URL ?>?page=somuAdmin" target="_top" class="nav-link" id="navSomu" style="display:none;">総務管理</a>
       <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
     </div>
   </header>
@@ -285,40 +287,14 @@ var currentStep = 1;
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
 
-  // 管理ページリンク表示判定
-  google.script.run.withSuccessHandler(function(canAccess) {
-    if (canAccess) {
-      var link = document.createElement('a');
-      link.href = APP_URL + '?page=admin';
-      link.target = '_top';
-      link.className = 'nav-link';
-      link.textContent = '管理ページ';
-      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
-    }
-  }).api_canAccessAdmin();
-
   // 部署管理リンク表示判定
-  google.script.run.withSuccessHandler(function(isDeptApprover) {
-    if (isDeptApprover) {
-      var link = document.createElement('a');
-      link.href = APP_URL + '?page=deptAdmin';
-      link.target = '_top';
-      link.className = 'nav-link';
-      link.textContent = '部署管理';
-      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
-    }
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navDept').style.display = '';
   }).api_isDeptApprover();
 
   // 総務管理リンク表示判定
-  google.script.run.withSuccessHandler(function(canAccess) {
-    if (canAccess) {
-      var link = document.createElement('a');
-      link.href = APP_URL + '?page=somuAdmin';
-      link.target = '_top';
-      link.className = 'nav-link';
-      link.textContent = '総務管理';
-      document.getElementById('navLinks').insertBefore(link, document.getElementById('portalLink'));
-    }
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navSomu').style.display = '';
   }).api_isSomu();
 
   // 部署一覧ロード

@@ -88,8 +88,8 @@
       <div class="sub" id="headerSub">担当部署の有給取得状況</div>
     </div>
     <div class="row">
-      <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOPへ</a>
-      <a href="<?= APP_URL ?>?page=somuAdmin" target="_top" class="nav-link">総務管理</a>
+      <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOP</a>
+      <a href="<?= APP_URL ?>?page=somuAdmin" target="_top" class="nav-link" id="navSomu" style="display:none;">総務管理</a>
       <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
     </div>
   </header>
@@ -130,6 +130,9 @@ var currentData = [];
 
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navSomu').style.display = '';
+  }).api_isSomu();
 
   // 年度セレクト初期化
   var fySelect = document.getElementById('fySelect');

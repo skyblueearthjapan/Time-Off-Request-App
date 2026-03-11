@@ -85,8 +85,8 @@
       <div class="sub">全社 有給取得義務管理</div>
     </div>
     <div class="row">
-      <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOPへ</a>
-      <a href="<?= APP_URL ?>?page=deptAdmin" target="_top" class="nav-link">部署管理</a>
+      <a href="<?= APP_URL ?>?page=top" target="_top" class="nav-link">申請TOP</a>
+      <a href="<?= APP_URL ?>?page=deptAdmin" target="_top" class="nav-link" id="navDept" style="display:none;">部署管理</a>
       <a href="<?= PORTAL_URL ?>" target="_top" class="portal-link" id="portalLink" style="display:none;">ポータルへ戻る</a>
     </div>
   </header>
@@ -130,6 +130,9 @@ var currentData = [];
 
 window.addEventListener('DOMContentLoaded', function() {
   if (PORTAL_URL) document.getElementById('portalLink').style.display = '';
+  google.script.run.withSuccessHandler(function(ok) {
+    if (ok) document.getElementById('navDept').style.display = '';
+  }).api_isDeptApprover();
 
   // 年度セレクト初期化
   var fySelect = document.getElementById('fySelect');
