@@ -105,6 +105,12 @@
     }
     .seal-cell .stamp-text{color:#cc0000;font-weight:700;font-size:12px;}
     .seal-cell .stamp-date{color:var(--muted);font-size:10px;margin-top:2px;}
+    .seal-cell .stamp-circle{
+      display:flex;align-items:center;justify-content:center;
+      width:68px;height:68px;border:3px solid #cc0000;border-radius:50%;
+      color:#cc0000;font-size:14px;font-weight:900;letter-spacing:.08em;
+      margin:0 auto;line-height:1.2;
+    }
     .t-approval .date-label{
       background:var(--label-bg);color:var(--label-fg);
       text-align:center;font-size:11px;
@@ -300,7 +306,7 @@ function renderPreview(d) {
   // 所属長セル
   h += '<td class="seal-cell">';
   if (isApproved) {
-    h += '<div class="stamp-text">（サイン）</div>';
+    h += '<div class="stamp-circle">承認済</div>';
   }
   h += '</td>';
   h += '</tr>';
