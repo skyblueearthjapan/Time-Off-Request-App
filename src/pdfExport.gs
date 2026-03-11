@@ -469,7 +469,7 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
         if (stampBlob) {
           SpreadsheetApp.flush();
           Utilities.sleep(500);
-          var stampImg = sheet.insertImage(stampBlob, 7, 24, 5, 5);
+          var stampImg = sheet.insertImage(stampBlob, 7, 24, 40, 3);
           stampImg.setWidth(120);
           stampImg.setHeight(70);
           approverStampInserted = true;
