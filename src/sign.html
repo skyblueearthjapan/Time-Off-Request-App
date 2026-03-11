@@ -46,10 +46,11 @@
 
     /* サインエリア */
     .sign-area{margin-top:12px;}
-    .sign-area-label{font-size:12px;color:var(--muted);margin-bottom:6px;}
+    .sign-area-label{font-size:13px;color:var(--text);margin-bottom:10px;font-weight:700;}
     canvas{
-      border:2px solid var(--line);border-radius:12px;background:#fff;
+      border:2px solid var(--accent2);border-radius:12px;background:#fff;
       cursor:crosshair;touch-action:none;display:block;margin:0 auto;
+      width:100%;height:260px;
     }
     .actions{display:flex;gap:10px;justify-content:center;margin-top:16px;}
     button{
@@ -89,7 +90,7 @@
       <!-- サインエリア（電子印がない場合のみ表示） -->
       <div class="sign-area" id="signArea" style="display:none;">
         <div class="sign-area-label">電子印が未登録のため、下の枠内にサインを書いてください</div>
-        <canvas id="signCanvas" width="400" height="200"></canvas>
+        <canvas id="signCanvas"></canvas>
         <div style="text-align:center;margin-top:8px;">
           <button class="btn-clear" onclick="clearCanvas()">クリア</button>
         </div>
@@ -122,9 +123,7 @@ function resizeCanvas() {
   var dpr = window.devicePixelRatio || 1;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
-  canvas.style.width = rect.width + 'px';
-  canvas.style.height = rect.height + 'px';
-  ctx.scale(dpr, dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.strokeStyle = '#0b2545';
   ctx.lineWidth = 2.5;
   ctx.lineCap = 'round';
@@ -149,12 +148,13 @@ canvas.addEventListener('pointerup', function(e) { drawing = false; e.preventDef
 canvas.addEventListener('pointerleave', function() { drawing = false; });
 
 function clearCanvas() {
-  var rect = canvas.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   hasDrawn = false;
 }
 
 // ====== 承認者一覧を読み込み ======
+window.addEventListener('resize', function() { resizeCanvas(); clearCanvas(); });
+
 window.addEventListener('DOMContentLoaded', function() {
   resizeCanvas();
 
