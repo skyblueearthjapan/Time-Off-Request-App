@@ -133,17 +133,19 @@ function generateLeavePdf_(reqId, approverEmail) {
   //   GASスクリプトロックは再入不可のため、ここでは取得しない。
 
   var tmpSs = null;
+  var tmpStampFileIds = []; // IMAGE数式用一時ファイルのクリーンアップ用
   try {
     // 一時スプレッドシートを新規作成（テンプレートコピー不要）
     tmpSs = SpreadsheetApp.create('TMP_PDF_' + reqId + '_' + fmtDate_(new Date(), 'yyyyMMdd_HHmmss'));
     var sheet = tmpSs.getSheets()[0];
     sheet.setName('休暇届');
 
-    // シート構築＋データ書込み（画像挿入含む）
-    buildLeavePdfSheet_(sheet, reqData, approverEmail);
+    // シート構築＋データ書込み（IMAGE数式での印影挿入含む）
+    tmpStampFileIds = buildLeavePdfSheet_(sheet, reqData, approverEmail);
     SpreadsheetApp.flush();
-    // 画像がシートに反映されるまで待機（大きな画像の場合特に重要）
-    Utilities.sleep(2000);
+    // IMAGE数式がレンダリングされるまで待機
+    Utilities.sleep(3000);
+    SpreadsheetApp.flush();
 
     // 保存先フォルダ
     var leaveDate = new Date(reqData.leaveDate);
@@ -173,6 +175,11 @@ function generateLeavePdf_(reqId, approverEmail) {
     if (tmpSs) {
       try { DriveApp.getFileById(tmpSs.getId()).setTrashed(true); }
       catch (e) { console.error('一時SS削除エラー: ' + e.message); }
+    }
+    // IMAGE数式用の一時スタンプファイルを削除
+    for (var ti = 0; ti < tmpStampFileIds.length; ti++) {
+      try { DriveApp.getFileById(tmpStampFileIds[ti]).setTrashed(true); }
+      catch (e) { console.error('一時スタンプ削除エラー: ' + e.message); }
     }
   }
 }
@@ -445,9 +452,11 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
     .setFontSize(8).setFontColor(C.MUTED);
 
   // ============================================================
-  //  承認印挿入（所属長欄: G24）
+  //  承認印挿入（所属長欄: G24、IMAGE数式方式）
+  //  ※ insertImage(blob) はPDFエクスポート時に反映されない
+  //    GAS既知問題のため、IMAGE()セル数式で確実にPDFに含める
   // ============================================================
-  // 1. 電子印（M_STAMPから承認者のメールで検索）
+  var tmpStampFileIds = [];
   var approverStampInserted = false;
   try {
     var stampEmail = approverEmail || '';
@@ -461,31 +470,15 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
       console.log('電子印FileId: ' + stampFileId);
 
       if (stampFileId) {
-        var stampFile = DriveApp.getFileById(stampFileId);
-        console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ')');
-        var stampBlob = stampFile.getBlob();
-        var originalSize = stampBlob.getBytes().length;
-        console.log('電子印Blob取得成功: size=' + originalSize);
-
-        // GAS insertImageの上限: 2MB / 100万ピクセル
-        // 大きな画像はサムネイルを取得して縮小
-        if (originalSize > 1500000) {
-          stampBlob = getResizedStampBlob_(stampFileId, stampBlob);
-          console.log('リサイズ後Blob: size=' + stampBlob.getBytes().length);
+        // 一時ファイルを作成してIMAGE数式で参照（PDFエクスポートに確実に含まれる）
+        var tmpId = createTmpStampForImageFormula_(stampFileId);
+        if (tmpId) {
+          tmpStampFileIds.push(tmpId);
+          var imageUrl = 'https://drive.google.com/uc?export=view&id=' + tmpId;
+          sheet.getRange('G24').setFormula('=IMAGE("' + imageUrl + '")');
+          approverStampInserted = true;
+          console.log('電子印IMAGE数式挿入成功: G24, tmpFileId=' + tmpId);
         }
-
-        // SpreadsheetApp.flush() で先にシート構築を確定
-        SpreadsheetApp.flush();
-        Utilities.sleep(1000);
-
-        // insertImage(blob, column, row, offsetX, offsetY) で明示的に位置指定
-        var stampImg = sheet.insertImage(stampBlob, 7, 24, 5, 5);
-        stampImg.setWidth(120);
-        stampImg.setHeight(70);
-        SpreadsheetApp.flush();
-        Utilities.sleep(500);
-        approverStampInserted = true;
-        console.log('電子印挿入成功: G24 (col=7, row=24)');
       } else {
         console.warn('電子印FileIdが空です。M_STAMPにメール=' + stampEmail + 'の登録があるか確認してください。');
       }
@@ -498,7 +491,8 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
   if (!approverStampInserted && data.signImageUrl) {
     try {
       console.log('手書きサイン挿入: URL=' + data.signImageUrl);
-      pdfInsertSign_(sheet, data.signImageUrl, 24, 7, 120, 70); // G24
+      var signTmpId = pdfInsertSignAsFormula_(sheet, data.signImageUrl, 'G24');
+      if (signTmpId) tmpStampFileIds.push(signTmpId);
     } catch (e) {
       console.error('サイン画像挿入エラー: ' + e.message);
     }
@@ -515,6 +509,9 @@ function buildLeavePdfSheet_(sheet, data, approverEmail) {
   if (sheet.getMaxRows() > 30) {
     sheet.hideRows(31, sheet.getMaxRows() - 30);
   }
+
+  // クリーンアップ用に一時ファイルIDを返す
+  return tmpStampFileIds;
 }
 
 // ====== ヘルパー関数 ======
@@ -625,8 +622,44 @@ function getResizedStampBlob_(fileId, originalBlob) {
   return originalBlob;
 }
 
-/** サイン画像をDrive URLからシートに挿入 */
-function pdfInsertSign_(sheet, imageUrl, row, col, width, height) {
+/**
+ * 電子印のDriveファイルから一時公開ファイルを作成（IMAGE数式用）
+ * @param {string} stampFileId - 元の電子印DriveファイルID
+ * @return {string|null} 一時ファイルID（クリーンアップ用）、失敗時null
+ */
+function createTmpStampForImageFormula_(stampFileId) {
+  try {
+    var stampFile = DriveApp.getFileById(stampFileId);
+    console.log('電子印ファイル取得成功: ' + stampFile.getName() + ' (' + stampFile.getMimeType() + ')');
+    var stampBlob = stampFile.getBlob();
+    var originalSize = stampBlob.getBytes().length;
+    console.log('電子印Blob取得成功: size=' + originalSize);
+
+    // 大きな画像はサムネイルで縮小
+    if (originalSize > 1500000) {
+      stampBlob = getResizedStampBlob_(stampFileId, stampBlob);
+      console.log('リサイズ後Blob: size=' + stampBlob.getBytes().length);
+    }
+
+    // 一時ファイルを作成し「リンクを知っている全員」に公開
+    var tmpFile = DriveApp.createFile(stampBlob.setName('tmp_stamp_' + stampFileId + '.png'));
+    tmpFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    console.log('一時スタンプファイル作成: id=' + tmpFile.getId());
+    return tmpFile.getId();
+  } catch (e) {
+    console.error('一時スタンプ作成エラー: ' + e.message + '\n' + e.stack);
+    return null;
+  }
+}
+
+/**
+ * サイン画像をIMAGE数式でセルに挿入（PDF出力対応）
+ * @param {Sheet} sheet - 対象シート
+ * @param {string} imageUrl - Drive URL
+ * @param {string} cellRange - セル範囲（例: 'G24'）
+ * @return {string|null} 一時ファイルID（クリーンアップ用）
+ */
+function pdfInsertSignAsFormula_(sheet, imageUrl, cellRange) {
   var fileId = '';
   var match = imageUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
   if (match) fileId = match[1];
@@ -636,13 +669,17 @@ function pdfInsertSign_(sheet, imageUrl, row, col, width, height) {
   }
   if (!fileId) {
     console.warn('サイン画像URLからファイルIDを抽出できません: ' + imageUrl);
-    return;
+    return null;
   }
 
-  var blob = DriveApp.getFileById(fileId).getBlob();
-  var img = sheet.insertImage(blob, col, row);
-  if (width) img.setWidth(width);
-  if (height) img.setHeight(height);
+  // サイン画像から一時公開ファイルを作成
+  var tmpId = createTmpStampForImageFormula_(fileId);
+  if (tmpId) {
+    var url = 'https://drive.google.com/uc?export=view&id=' + tmpId;
+    sheet.getRange(cellRange).setFormula('=IMAGE("' + url + '")');
+    console.log('サイン画像IMAGE数式挿入成功: ' + cellRange);
+  }
+  return tmpId;
 }
 
 // ====== PDFエクスポート ======
