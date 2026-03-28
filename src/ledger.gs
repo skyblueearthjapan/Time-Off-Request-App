@@ -306,3 +306,35 @@ function countPaidLeaves_(fy, workerId) {
 
   return count;
 }
+
+/**
+ * 台帳から指定reqIdの行を削除する。
+ * 申請キャンセル・編集（承認取消）時に呼ばれる。
+ */
+function removeLedgerRow_(reqId, leaveDate) {
+  try {
+    var ss = getLedgerSs_();
+    if (!ss) return;
+
+    var d = leaveDate instanceof Date ? leaveDate : new Date(leaveDate);
+    var fy = computeFiscalYear_(d);
+    var sheetName = fy + '年度';
+    var sh = ss.getSheetByName(sheetName);
+    if (!sh) return;
+
+    var lastRow = sh.getLastRow();
+    if (lastRow < 2) return;
+
+    var reqIds = sh.getRange(2, 1, lastRow - 1, 1).getValues();
+    for (var i = reqIds.length - 1; i >= 0; i--) {
+      if (normalize_(reqIds[i][0]) === reqId) {
+        sh.deleteRow(i + 2);
+        Logger.log('台帳行削除完了: ' + reqId + ' → ' + sheetName + ' 行' + (i + 2));
+        return;
+      }
+    }
+    Logger.log('台帳行削除: 該当行なし（' + reqId + '）');
+  } catch (e) {
+    Logger.log('removeLedgerRow_ エラー（処理続行）: ' + e.message);
+  }
+}

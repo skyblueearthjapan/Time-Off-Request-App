@@ -294,6 +294,39 @@
     </div>
   </div>
 
+  <!-- 編集モーダル -->
+  <div class="overlay" id="editOverlay">
+    <div class="modal" style="max-width:420px;">
+      <h3 id="editModalTitle">休暇届 編集</h3>
+      <div class="form-group">
+        <label>対象者</label>
+        <div id="editInfo" style="font-weight:700;font-size:14px;padding:4px 0;"></div>
+      </div>
+      <div class="form-group">
+        <label>休暇日</label>
+        <input type="date" id="editLeaveDate" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;" />
+      </div>
+      <div class="form-group">
+        <label>休暇区分</label>
+        <div class="radio-group">
+          <label><input type="radio" name="editLeaveKubun" value="全日休"><span>全日休</span></label>
+          <label><input type="radio" name="editLeaveKubun" value="半日休"><span>半日休</span></label>
+        </div>
+      </div>
+      <div class="form-group" id="editHalfDayWrap" style="display:none;">
+        <label>半日区分</label>
+        <div class="radio-group">
+          <label><input type="radio" name="editHalfDayType" value="午前"><span>午前</span></label>
+          <label><input type="radio" name="editHalfDayType" value="午後"><span>午後</span></label>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+        <button class="ghost btn-sm" onclick="closeEditLeaveModal()">キャンセル</button>
+        <button class="btn-blue btn-sm" id="editSaveBtn" onclick="saveEditLeave()">保存</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 var APP_URL = '<?= APP_URL ?>';
 var PORTAL_URL = '<?= PORTAL_URL ?>';
@@ -495,9 +528,20 @@ function loadLeaveTable() {
       wrap.innerHTML = '<div class="loading">予定なし</div>';
       return;
     }
-    var html = '<table><thead><tr><th>日付</th><th>部署</th><th>氏名</th><th>区分</th><th>種類</th><th>状態</th><th></th></tr></thead><tbody>';
+    // 編集モーダル用にデータをキャッシュ
+    window.LEAVE_ITEMS = items;
+
+    var html = '<table><thead><tr><th>日付</th><th>部署</th><th>氏名</th><th>区分</th><th>種類</th><th>状態</th><th>操作</th></tr></thead><tbody>';
     futureItems.forEach(function(it) {
       var statusClass = it.status === '承認済' ? 'ok' : 'info';
+      var actionBtns = '';
+      if (it.status !== '取消' && it.status !== '却下') {
+        actionBtns = '<button class="ghost btn-sm" onclick="openEditLeaveModal(\'' + it.reqId + '\')" style="font-size:11px;">編集</button>'
+          + ' <button class="ghost btn-sm" onclick="confirmDeleteLeave(\'' + it.reqId + '\')" style="font-size:11px;color:var(--danger);">削除</button>';
+      }
+      if (it.status === '申請中') {
+        actionBtns += ' <a href="' + APP_URL + '?page=preview&reqId=' + it.reqId + '" target="_top" class="btn-sm btn-blue" style="color:#fff;text-decoration:none;padding:4px 10px;border-radius:8px;">承認</a>';
+      }
       html += '<tr>'
         + '<td>' + it.leaveDate + '</td>'
         + '<td>' + it.deptName + '</td>'
@@ -505,7 +549,7 @@ function loadLeaveTable() {
         + '<td>' + it.leaveKubun + (it.halfDayType ? '(' + it.halfDayType + ')' : '') + '</td>'
         + '<td>' + it.leaveType + '</td>'
         + '<td><span class="pill ' + statusClass + '">' + it.status + '</span></td>'
-        + '<td>' + (it.status === '申請中' ? '<a href="' + APP_URL + '?page=preview&reqId=' + it.reqId + '" target="_top" class="btn-sm btn-blue" style="color:#fff;text-decoration:none;padding:4px 10px;border-radius:8px;">承認</a>' : '') + '</td>'
+        + '<td>' + actionBtns + '</td>'
         + '</tr>';
     });
     html += '</tbody></table>';
@@ -746,6 +790,118 @@ function loadPendingRequests() {
       document.getElementById('pendingCount').textContent = '';
     })
     .api_getAllPendingRequests();
+}
+
+// ====== 編集モーダル ======
+var EDIT_LEAVE_CTX = {};
+
+// 休暇区分ラジオ変更時に半日区分の表示切り替え
+document.querySelectorAll('input[name="editLeaveKubun"]').forEach(function(r) {
+  r.addEventListener('change', function() {
+    document.getElementById('editHalfDayWrap').style.display =
+      this.value === '半日休' ? '' : 'none';
+  });
+});
+
+function openEditLeaveModal(reqId) {
+  var item = null;
+  (window.LEAVE_ITEMS || []).forEach(function(it) { if (it.reqId === reqId) item = it; });
+  if (!item) { alert('申請データが見つかりません。画面を更新してください。'); return; }
+
+  EDIT_LEAVE_CTX = { reqId: reqId, item: item };
+
+  document.getElementById('editInfo').textContent = item.deptName + ' ／ ' + item.workerName;
+
+  // 休暇日（yyyy/MM/dd → yyyy-MM-dd に変換）
+  var dateVal = (item.leaveDate || '').replace(/\//g, '-');
+  document.getElementById('editLeaveDate').value = dateVal;
+
+  // 休暇区分
+  document.querySelectorAll('input[name="editLeaveKubun"]').forEach(function(r) {
+    r.checked = (r.value === item.leaveKubun);
+  });
+
+  // 半日区分
+  document.getElementById('editHalfDayWrap').style.display =
+    item.leaveKubun === '半日休' ? '' : 'none';
+  document.querySelectorAll('input[name="editHalfDayType"]').forEach(function(r) {
+    r.checked = (r.value === item.halfDayType);
+  });
+
+  var btn = document.getElementById('editSaveBtn');
+  btn.disabled = false;
+  btn.textContent = '保存';
+
+  document.getElementById('editOverlay').classList.add('active');
+}
+
+function closeEditLeaveModal() {
+  document.getElementById('editOverlay').classList.remove('active');
+}
+
+function saveEditLeave() {
+  var leaveDate = document.getElementById('editLeaveDate').value;
+  var kubunRadio = document.querySelector('input[name="editLeaveKubun"]:checked');
+  var halfDayRadio = document.querySelector('input[name="editHalfDayType"]:checked');
+
+  if (!leaveDate) { alert('休暇日を入力してください。'); return; }
+  if (!kubunRadio) { alert('休暇区分を選択してください。'); return; }
+  if (kubunRadio.value === '半日休' && !halfDayRadio) { alert('半日区分を選択してください。'); return; }
+
+  var patch = {
+    leaveDate: leaveDate,
+    leaveKubun: kubunRadio.value,
+    halfDayType: kubunRadio.value === '半日休' ? halfDayRadio.value : ''
+  };
+
+  var msg = '申請内容を変更しますか？\n休暇日: ' + leaveDate + '\n区分: ' + patch.leaveKubun;
+  if (patch.halfDayType) msg += '(' + patch.halfDayType + ')';
+  if (EDIT_LEAVE_CTX.item.status === '承認済') msg += '\n\n※ 承認済みのため、申請中に戻り再承認が必要になります。';
+  if (!confirm(msg)) return;
+
+  var btn = document.getElementById('editSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '保存中...';
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      closeEditLeaveModal();
+      if (res && res.ok) {
+        alert('申請を更新しました。');
+        loadLeaveTable();
+        loadPendingRequests();
+      } else {
+        alert('更新に失敗しました。');
+      }
+    })
+    .withFailureHandler(function(err) {
+      btn.disabled = false;
+      btn.textContent = '保存';
+      alert('エラー: ' + (err.message || err));
+    })
+    .api_editLeaveRequest(EDIT_LEAVE_CTX.reqId, patch);
+}
+
+function confirmDeleteLeave(reqId) {
+  var item = null;
+  (window.LEAVE_ITEMS || []).forEach(function(it) { if (it.reqId === reqId) item = it; });
+  var label = item ? (item.workerName + ' の休暇届（' + item.leaveDate + '）') : '選択した申請';
+  if (!confirm(label + 'を削除しますか？\n\nこの操作は取り消せません。')) return;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (res && res.ok) {
+        alert('申請を削除しました。');
+        loadLeaveTable();
+        loadPendingRequests();
+      } else {
+        alert('削除に失敗しました。');
+      }
+    })
+    .withFailureHandler(function(err) {
+      alert('削除エラー: ' + (err.message || err));
+    })
+    .api_deleteLeaveRequest(reqId);
 }
 </script>
 </body>

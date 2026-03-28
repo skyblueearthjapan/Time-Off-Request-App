@@ -716,3 +716,132 @@ function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
 
   return { ok: true, results: results };
 }
+
+// ====== 申請編集 API ======
+// TOP画面から呼ばれる。休暇日・休暇区分（全日/半日）・半日区分（午前/午後）を変更可能。
+// 承認済みの場合は申請中に戻す（再承認必要）。PDF削除・台帳削除も行う。
+
+function api_editLeaveRequest(reqId, patch) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var req = api_getLeaveRequestById(reqId);
+    if (!req) throw new Error('申請が見つかりません。');
+    if (req.status === STATUS.CANCELED || req.status === STATUS.REJECTED) {
+      throw new Error('取消/却下済みの申請は編集できません。');
+    }
+
+    var leaveDate = normalize_(patch.leaveDate || '');
+    var leaveKubun = normalize_(patch.leaveKubun || '');
+    var halfDayType = normalize_(patch.halfDayType || '');
+
+    // バリデーション
+    if (leaveDate && !/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
+      throw new Error('休暇日の形式が不正です: ' + leaveDate);
+    }
+    if (leaveKubun && leaveKubun !== LEAVE_KUBUN.FULL_DAY && leaveKubun !== LEAVE_KUBUN.HALF_DAY) {
+      throw new Error('休暇区分が不正です: ' + leaveKubun);
+    }
+    if (leaveKubun === LEAVE_KUBUN.HALF_DAY && halfDayType !== HALF_DAY_TYPE.AM && halfDayType !== HALF_DAY_TYPE.PM) {
+      throw new Error('半日区分を選択してください。');
+    }
+
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+    var rowNo = req.rowNo;
+
+    // 休暇日の更新
+    if (leaveDate) {
+      sh.getRange(rowNo, idx['休暇日'] + 1).setValue(leaveDate);
+      // 年度も再計算
+      var newFy = computeFiscalYear_(new Date(leaveDate + 'T00:00:00+09:00'));
+      if (idx['年度'] !== undefined) sh.getRange(rowNo, idx['年度'] + 1).setValue(newFy);
+    }
+
+    // 休暇区分の更新
+    if (leaveKubun) {
+      sh.getRange(rowNo, idx['休暇区分'] + 1).setValue(leaveKubun);
+      if (leaveKubun === LEAVE_KUBUN.FULL_DAY) {
+        // 全日休の場合は半日区分をクリア
+        sh.getRange(rowNo, idx['半日区分'] + 1).setValue('');
+      } else {
+        sh.getRange(rowNo, idx['半日区分'] + 1).setValue(halfDayType);
+      }
+    }
+
+    // 承認済みの場合は申請中に戻す
+    var newStatus = req.status;
+    if (req.status === STATUS.APPROVED) {
+      newStatus = STATUS.SUBMITTED;
+      sh.getRange(rowNo, idx['承認状態'] + 1).setValue(STATUS.SUBMITTED);
+      // 承認関連フィールドをクリア
+      if (idx['承認日時'] !== undefined) sh.getRange(rowNo, idx['承認日時'] + 1).setValue('');
+      if (idx['APPROVED_BY1_EMAIL'] !== undefined) sh.getRange(rowNo, idx['APPROVED_BY1_EMAIL'] + 1).setValue('');
+      if (idx['サイン画像URL'] !== undefined) sh.getRange(rowNo, idx['サイン画像URL'] + 1).setValue('');
+      if (idx['APPROVED_BY2'] !== undefined) sh.getRange(rowNo, idx['APPROVED_BY2'] + 1).setValue('');
+      if (idx['APPROVED_BY2_EMAIL'] !== undefined) sh.getRange(rowNo, idx['APPROVED_BY2_EMAIL'] + 1).setValue('');
+      if (idx['APPROVED_AT2'] !== undefined) sh.getRange(rowNo, idx['APPROVED_AT2'] + 1).setValue('');
+
+      // PDF削除
+      var pdfFileId = idx['PDF_FILE_ID'] !== undefined ? normalize_(sh.getRange(rowNo, idx['PDF_FILE_ID'] + 1).getValue()) : '';
+      if (pdfFileId) {
+        try { DriveApp.getFileById(pdfFileId).setTrashed(true); } catch (e) { console.warn('旧PDF削除スキップ: ' + e.message); }
+        if (idx['PDF_URL'] !== undefined) sh.getRange(rowNo, idx['PDF_URL'] + 1).setValue('');
+        if (idx['PDF_FILE_ID'] !== undefined) sh.getRange(rowNo, idx['PDF_FILE_ID'] + 1).setValue('');
+      }
+
+      // 台帳から行削除
+      try { removeLedgerRow_(reqId, req.leaveDate); } catch (e) { console.warn('台帳削除スキップ: ' + e.message); }
+    }
+
+    SpreadsheetApp.flush();
+
+    // サマリー再構築（有給カウントが変わる可能性）
+    try { rebuildLeaveSummary_(); } catch (e) { console.warn('サマリー再構築スキップ: ' + e.message); }
+
+    return { ok: true, newStatus: newStatus };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ====== 申請削除（キャンセル）API ======
+
+function api_deleteLeaveRequest(reqId) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var req = api_getLeaveRequestById(reqId);
+    if (!req) throw new Error('申請が見つかりません。');
+    if (req.status === STATUS.CANCELED) throw new Error('既に取消済みです。');
+
+    var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var sh = info.sh;
+    var idx = info.idx;
+    var rowNo = req.rowNo;
+
+    // ステータスを取消に変更
+    sh.getRange(rowNo, idx['承認状態'] + 1).setValue(STATUS.CANCELED);
+
+    // PDF削除
+    var pdfFileId = idx['PDF_FILE_ID'] !== undefined ? normalize_(sh.getRange(rowNo, idx['PDF_FILE_ID'] + 1).getValue()) : '';
+    if (pdfFileId) {
+      try { DriveApp.getFileById(pdfFileId).setTrashed(true); } catch (e) { console.warn('旧PDF削除スキップ: ' + e.message); }
+      if (idx['PDF_URL'] !== undefined) sh.getRange(rowNo, idx['PDF_URL'] + 1).setValue('');
+      if (idx['PDF_FILE_ID'] !== undefined) sh.getRange(rowNo, idx['PDF_FILE_ID'] + 1).setValue('');
+    }
+
+    SpreadsheetApp.flush();
+
+    // 台帳から行削除
+    try { removeLedgerRow_(reqId, req.leaveDate); } catch (e) { console.warn('台帳削除スキップ: ' + e.message); }
+
+    // サマリー再構築
+    try { rebuildLeaveSummary_(); } catch (e) { console.warn('サマリー再構築スキップ: ' + e.message); }
+
+    return { ok: true };
+  } finally {
+    lock.releaseLock();
+  }
+}
