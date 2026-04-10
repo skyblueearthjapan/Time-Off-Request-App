@@ -88,6 +88,7 @@ function api_submitLeaveRequest(data) {
         '休暇区分', '半日区分', '休暇日', '休暇種類',
         '振替元出勤日', '特別理由', '有給詳細', '追加詳細',
         '申請日時', '承認日時', '承認状態', 'サイン画像URL', 'PDF_URL', 'PDF_FILE_ID',
+        'CREATED_BY_EMAIL',
         'APPROVED_BY1_EMAIL', 'APPROVED_BY2', 'APPROVED_BY2_EMAIL', 'APPROVED_AT2'
       ];
       sh.getRange(1, 1, 1, headers.length).setValues([headers]);

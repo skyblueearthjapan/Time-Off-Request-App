@@ -430,7 +430,8 @@ var retroWorkingDaysCache = {};           // { 'yyyy-MM': ['yyyy-MM-dd', ...] }
 // 今年度の開始日（3/16）を動的算出
 // 3/16 以降なら当年の 3/16、それ以前なら前年の 3/16
 function getFyStart_() {
-  var t = new Date();
+  // JST基準で年度開始日を算出（ブラウザTZに依存しない）
+  var t = new Date(new Date().toLocaleString('en-US', {timeZone: 'Asia/Tokyo'}));
   var beforeMid = (t.getMonth() < 2) || (t.getMonth() === 2 && t.getDate() < 16);
   return new Date(beforeMid ? t.getFullYear() - 1 : t.getFullYear(), 2, 16);
 }
@@ -955,9 +956,10 @@ function buildConfirmation() {
   document.getElementById('cfmKubun').textContent = kubun ? kubun.value : '';
   document.getElementById('cfmHalfDay').textContent = halfDay ? halfDay.value : '-';
   // 内部保持は ISO 形式のため、確認画面表示用にスラッシュ形式へ整形
+  var normalVal = document.getElementById('leaveDate').value;
   var displayDate = selectedRetroactiveLeaveDate
     ? isoToSlash_(selectedRetroactiveLeaveDate) + '（過去申請）'
-    : document.getElementById('leaveDate').value;
+    : isoToSlash_(normalVal) || normalVal;
   document.getElementById('cfmDate').textContent = displayDate;
   document.getElementById('cfmType').textContent = leaveType ? leaveType.value : '';
   document.getElementById('cfmSubDate').textContent = document.getElementById('substituteDate').value || '-';

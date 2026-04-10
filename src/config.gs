@@ -219,7 +219,8 @@ function computeIsRetroactive_(appliedAt, leaveDateStr) {
 function computeDaysAgo_(leaveDateStr, today) {
   if (!leaveDateStr) return 0;
   var t = today || new Date();
-  var t0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  var todayStr = Utilities.formatDate(t, TZ, 'yyyy-MM-dd');
+  var t0 = new Date(todayStr + 'T00:00:00+09:00');
   var ldStr = (leaveDateStr instanceof Date) ? Utilities.formatDate(leaveDateStr, TZ, 'yyyy-MM-dd') : String(leaveDateStr).substring(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ldStr)) return 0;
   var ld = new Date(ldStr + 'T00:00:00+09:00');

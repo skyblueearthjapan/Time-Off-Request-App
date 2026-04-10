@@ -404,6 +404,9 @@ function api_getWorkingDays() {
     calMap[key] = normalize_(values[r][kubunIdx]);
   }
 
+  // 祝日マップ（M_CALENDAR未登録期間向け）
+  var publicHolidays = getJapanesePublicHolidays_();
+
   // 今日〜年度末の範囲で勤務日を算出
   var today = new Date();
   var _m3 = today.getMonth() + 1, _d3 = today.getDate();
@@ -423,8 +426,10 @@ function api_getWorkingDays() {
       // 出勤土曜 → 勤務日
       result.push(key);
     } else if (dow >= 1 && dow <= 5) {
-      // 平日（月〜金）でカレンダーに載っていない → 勤務日
-      result.push(key);
+      // 平日（月〜金）でカレンダーに載っていない → 祝日チェック後に勤務日判定
+      if (!publicHolidays[key]) {
+        result.push(key);
+      }
     }
     // それ以外（通常の土日でカレンダーに未登録） → スキップ
 

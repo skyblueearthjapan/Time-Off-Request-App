@@ -492,6 +492,9 @@ function buildLeavePdfSheet_(sheet, data, approverEmail, approver2Email) {
 
   if (!approverStampInserted && !data.signImageUrl) {
     console.warn('承認印なし: 電子印もサイン画像もありません');
+    // 所属長欄に「承認印取得不可」を表示（空欄防止）
+    sheet.getRange('G24').setValue('（承認印取得不可）').setFontSize(8).setFontColor('#dc2626')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
   }
 
   // ============================================================
