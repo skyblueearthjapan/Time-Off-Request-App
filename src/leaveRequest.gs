@@ -426,23 +426,8 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
     }
     SpreadsheetApp.flush();
 
-    // 3. PDF生成（承認者メールを渡す）
-    console.log('=== PDF生成開始 === reqId=' + reqId + ', approverEmail=' + approverEmail + ' (type=' + typeof approverEmail + ')');
-    var pdfResult = null;
-    try {
-      pdfResult = generateLeavePdf_(reqId, approverEmail);
-      console.log('PDF生成結果: ' + JSON.stringify(pdfResult));
-      if (pdfResult && pdfResult.ok) {
-        if (idx['PDF_URL'] !== undefined) {
-          sh.getRange(targetRow, idx['PDF_URL'] + 1).setValue(pdfResult.pdfUrl || '');
-        }
-        if (idx['PDF_FILE_ID'] !== undefined) {
-          sh.getRange(targetRow, idx['PDF_FILE_ID'] + 1).setValue(pdfResult.pdfFileId || '');
-        }
-      }
-    } catch (pdfErr) {
-      console.error('PDF生成エラー（続行）: ' + pdfErr.message + '\n' + pdfErr.stack);
-    }
+    // 3. PDF生成は2次承認時にまとめて行う（1次承認時はスキップ）
+    //    ※ 1次承認者メール(APPROVED_BY1_EMAIL)はステップ2で保存済み
 
     // 4. サマリー再構築
     try {
@@ -599,7 +584,14 @@ function api_approveLeaveRequest2(reqId, approver2Email) {
       if (a1Col !== undefined) {
         approver1Email = normalize_(values[targetRow - 2][a1Col]);
       }
+      // フォールバック: 列値が空なら承認者メールをシートから直接再取得
+      if (!approver1Email && a1Col !== undefined) {
+        approver1Email = normalize_(sh.getRange(targetRow, a1Col + 1).getValue());
+      }
       console.log('2次承認PDF再生成: reqId=' + reqId + ', approver1=' + approver1Email + ', approver2=' + approver2Email);
+      if (!approver1Email) {
+        console.warn('WARNING: 1次承認者メールが取得できません。APPROVED_BY1_EMAIL列を確認してください。');
+      }
 
       // 既存PDFをゴミ箱へ
       var pdfFileIdCol = idx['PDF_FILE_ID'];
@@ -704,8 +696,15 @@ function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
 
         // PDF再生成用の情報を収集
         var approver1Email = '';
-        var a1Col = idx['APPROVED_BY1_EMAIL'];
+        var a1Col = idx['APPROVED_BY1_EMAIL'] !== undefined ? idx['APPROVED_BY1_EMAIL'] : idx['1次承認者メール'];
         if (a1Col !== undefined) approver1Email = normalize_(values[rowIdx][a1Col]);
+        // フォールバック: 列値が空ならシートから直接再取得
+        if (!approver1Email && a1Col !== undefined) {
+          approver1Email = normalize_(sh.getRange(targetRow, a1Col + 1).getValue());
+        }
+        if (!approver1Email) {
+          console.warn('WARNING(batch): 1次承認者メールが取得できません。reqId=' + reqId);
+        }
         var oldPdfId = idx['PDF_FILE_ID'] !== undefined ? normalize_(values[rowIdx][idx['PDF_FILE_ID']]) : '';
 
         pdfTargets.push({ reqId: reqId, targetRow: targetRow, approver1Email: approver1Email, oldPdfId: oldPdfId });
