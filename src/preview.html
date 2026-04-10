@@ -255,6 +255,14 @@ function renderPreview(d) {
 
   h += '<div class="p-body">';
 
+  // 過去申請バッジ
+  if (d.isRetroactive === true) {
+    var daysAgoTxt = (typeof d.daysAgo === 'number') ? '（' + d.daysAgo + '日前）' : '';
+    h += '<div style="margin:12px 0 0;padding:8px 12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;color:#7c2d12;font-size:12px;font-weight:700;">'
+      + '&#128281; 過去申請' + e(daysAgoTxt) + ' ／ 事前に承認者・総務へ連絡済みであることをご確認ください。'
+      + '</div>';
+  }
+
   // 届出日
   h += '<div class="p-date">' + e(submitStr) + '</div>';
 

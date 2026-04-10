@@ -102,6 +102,68 @@
     .confirm-table td{padding:6px 0;}
     /* 本日の休暇者セクション */
     .card-today{border:2px solid #f97316;background:#fff;}
+    /* ====== 過去申請カレンダー ====== */
+    .retro-section{
+      margin-top:14px;border:1px solid #fcd34d;background:#fffbeb;
+      border-radius:12px;overflow:hidden;
+    }
+    .retro-toggle{
+      display:block;width:100%;background:transparent;color:#92400e;
+      border:0;padding:10px 14px;text-align:left;font-weight:800;font-size:13px;
+      cursor:pointer;box-shadow:none;
+    }
+    .retro-toggle:hover{background:#fff3c4;}
+    .retro-body{
+      max-height:0;overflow:hidden;
+      transition:max-height .25s ease;
+      padding:0 14px;
+    }
+    .retro-section.open .retro-body{
+      max-height:680px;padding:0 14px 14px;
+    }
+    .retro-warn{
+      background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;
+      padding:8px 10px;font-size:12px;color:#7c2d12;line-height:1.5;
+      margin-bottom:10px;
+    }
+    .retro-cal-header{
+      display:flex;align-items:center;justify-content:space-between;
+      margin-bottom:8px;
+    }
+    .retro-cal-header button{
+      background:#fff;color:#92400e;border:1px solid #fcd34d;
+      padding:4px 10px;font-size:13px;font-weight:800;border-radius:8px;
+      box-shadow:none;
+    }
+    .retro-cal-header button:disabled{opacity:.4;cursor:not-allowed;}
+    .retro-cal-title{font-weight:800;font-size:14px;color:#7c2d12;}
+    .retro-cal-grid{
+      display:grid;grid-template-columns:repeat(7,1fr);gap:2px;
+    }
+    .retro-cal-grid .dow{
+      text-align:center;font-size:11px;font-weight:700;color:var(--muted);
+      padding:4px 0;
+    }
+    .retro-cal-grid .dow.sun{color:#ff5a5f;}
+    .retro-cal-grid .dow.sat{color:#0ea5e9;}
+    .retro-cal-cell{
+      aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+      font-size:13px;border-radius:8px;background:#fff;
+      border:1px solid #fde68a;cursor:pointer;color:var(--text);
+      user-select:none;
+    }
+    .retro-cal-cell.empty{background:transparent;border-color:transparent;cursor:default;}
+    .retro-cal-cell.disabled{
+      background:#f1f5f9;color:#cbd5e1;cursor:not-allowed;border-color:#e2e8f0;
+    }
+    .retro-cal-cell.workable:hover{background:#fff3c4;}
+    .retro-cal-cell.selected{
+      background:linear-gradient(135deg,#f59e0b,#f97316);
+      color:#fff;font-weight:800;border-color:#f59e0b;
+    }
+    .retro-selected-info{
+      margin-top:8px;font-size:13px;color:#7c2d12;font-weight:700;
+    }
     @media(max-width:640px){
       header{flex-direction:column;align-items:flex-start;gap:8px;}
       .wrap{padding:12px 10px;}
@@ -196,6 +258,26 @@
           <label>休暇日を選択してください（勤務日のみ）</label>
           <select id="leaveDate"><option value="">読込中...</option></select>
         </div>
+
+        <!-- 過去申請カレンダー -->
+        <div class="retro-section" id="retroSection">
+          <button type="button" class="retro-toggle" id="retroToggleBtn" onclick="toggleRetroSection()">
+            <span id="retroToggleIcon">&#9654;</span> &#128197; 過去日に申請する場合はこちら
+          </button>
+          <div class="retro-body">
+            <div class="retro-warn">
+              &#9888; 過去申請をされる場合は、必ず事前に承認者および総務へご連絡ください。
+            </div>
+            <div class="retro-cal-header">
+              <button type="button" id="retroPrevBtn" onclick="changeRetroMonth(-1)">&#9664;</button>
+              <div class="retro-cal-title" id="retroCalTitle">―</div>
+              <button type="button" id="retroNextBtn" onclick="changeRetroMonth(1)">&#9654;</button>
+            </div>
+            <div class="retro-cal-grid" id="retroCalGrid"></div>
+            <div class="retro-selected-info" id="retroSelectedInfo">選択中: なし</div>
+          </div>
+        </div>
+
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(1)">戻る</button>
           <button class="btn-sm" onclick="nextStep(3)">次へ</button>
@@ -337,6 +419,27 @@ var selectedWorkerName = '';
 var lookupData = null;
 var workingDays = [];
 var currentStep = 1;
+// ====== 過去申請カレンダー用ステート ======
+// selectedRetroactiveLeaveDate は 'yyyy-MM-dd' (ISO) 形式で内部保持する
+// （表示時のみスラッシュ形式に整形。バックエンドは ISO 形式を要求）
+var selectedRetroactiveLeaveDate = '';
+var retroCalYear = 0;
+var retroCalMonth = 0;                    // 1-12
+var retroWorkingDaysCache = {};           // { 'yyyy-MM': ['yyyy-MM-dd', ...] }
+
+// 今年度の開始日（3/16）を動的算出
+// 3/16 以降なら当年の 3/16、それ以前なら前年の 3/16
+function getFyStart_() {
+  var t = new Date();
+  var beforeMid = (t.getMonth() < 2) || (t.getMonth() === 2 && t.getDate() < 16);
+  return new Date(beforeMid ? t.getFullYear() - 1 : t.getFullYear(), 2, 16);
+}
+var RETRO_MIN_DATE = getFyStart_();
+
+// 'yyyy-MM-dd' → 'yyyy/MM/dd'（表示用）
+function isoToSlash_(iso) {
+  return iso ? iso.replace(/-/g, '/') : '';
+}
 
 // ====== 初期化 ======
 window.addEventListener('DOMContentLoaded', function() {
@@ -413,6 +516,20 @@ window.addEventListener('DOMContentLoaded', function() {
     var sel = document.getElementById('leaveDate');
     sel.innerHTML = '<option value="">-- 取得エラー --</option>';
   }).api_getWorkingDays();
+
+  // 通常プルダウンが選ばれたら過去申請カレンダー選択をクリア（排他）
+  var leaveDateEl = document.getElementById('leaveDate');
+  if (leaveDateEl) {
+    leaveDateEl.addEventListener('change', function() {
+      if (this.value && selectedRetroactiveLeaveDate) {
+        selectedRetroactiveLeaveDate = '';
+        var info = document.getElementById('retroSelectedInfo');
+        if (info) info.textContent = '選択中: なし';
+        var cells = document.querySelectorAll('#retroCalGrid .retro-cal-cell.selected');
+        for (var i = 0; i < cells.length; i++) cells[i].classList.remove('selected');
+      }
+    });
+  }
 
   // 休日一覧ロード（振替元出勤日プルダウン用）
   google.script.run.withSuccessHandler(function(holidays) {
@@ -581,6 +698,163 @@ function resetModal() {
   document.getElementById('substituteDate').selectedIndex = 0;
   document.getElementById('specialReason').value = '';
   document.getElementById('paidDetail').value = '';
+  // 過去申請カレンダーもリセット
+  selectedRetroactiveLeaveDate = '';
+  document.getElementById('retroSelectedInfo').textContent = '選択中: なし';
+  var sec = document.getElementById('retroSection');
+  if (sec) sec.classList.remove('open');
+  var icon = document.getElementById('retroToggleIcon');
+  if (icon) icon.innerHTML = '&#9654;';
+  // 今日基準月で初期化
+  var now = new Date();
+  retroCalYear = now.getFullYear();
+  retroCalMonth = now.getMonth() + 1;
+  renderRetroCalendar();
+}
+
+// ====== 過去申請カレンダー ======
+function toggleRetroSection() {
+  var sec = document.getElementById('retroSection');
+  var icon = document.getElementById('retroToggleIcon');
+  if (sec.classList.contains('open')) {
+    sec.classList.remove('open');
+    icon.innerHTML = '&#9654;';
+  } else {
+    sec.classList.add('open');
+    icon.innerHTML = '&#9660;';
+    // 開いた時に最新で再描画
+    if (!retroCalYear) {
+      var now = new Date();
+      retroCalYear = now.getFullYear();
+      retroCalMonth = now.getMonth() + 1;
+    }
+    renderRetroCalendar();
+  }
+}
+
+function changeRetroMonth(delta) {
+  var m = retroCalMonth + delta;
+  var y = retroCalYear;
+  if (m < 1) { m = 12; y--; }
+  if (m > 12) { m = 1; y++; }
+  // 範囲外のチェック
+  var firstOfMonth = new Date(y, m - 1, 1);
+  var lastOfMonth = new Date(y, m, 0);
+  var today = new Date();
+  today.setHours(0,0,0,0);
+  // 月全体が許容範囲外なら切替不可
+  if (lastOfMonth < RETRO_MIN_DATE) return;
+  if (firstOfMonth > today) return;
+  retroCalYear = y;
+  retroCalMonth = m;
+  renderRetroCalendar();
+}
+
+function renderRetroCalendar() {
+  var title = document.getElementById('retroCalTitle');
+  var grid = document.getElementById('retroCalGrid');
+  if (!title || !grid) return;
+  title.textContent = retroCalYear + '年 ' + retroCalMonth + '月';
+
+  // 前後ボタンの活性制御
+  var prevFirst = new Date(retroCalYear, retroCalMonth - 2, 1);
+  var prevLast = new Date(retroCalYear, retroCalMonth - 1, 0);
+  document.getElementById('retroPrevBtn').disabled = (prevLast < RETRO_MIN_DATE);
+  var nextFirst = new Date(retroCalYear, retroCalMonth, 1);
+  var today = new Date(); today.setHours(0,0,0,0);
+  document.getElementById('retroNextBtn').disabled = (nextFirst > today);
+
+  // ヘッダー（曜日）
+  var html = '';
+  var dows = ['日','月','火','水','木','金','土'];
+  for (var i = 0; i < 7; i++) {
+    var cls = 'dow';
+    if (i === 0) cls += ' sun';
+    if (i === 6) cls += ' sat';
+    html += '<div class="' + cls + '">' + dows[i] + '</div>';
+  }
+  grid.innerHTML = html + '<div class="retro-cal-loading" style="grid-column:span 7;text-align:center;padding:14px;color:var(--muted);font-size:12px;">読込中...</div>';
+
+  // バックエンドから勤務日取得（'yyyy-MM' 文字列で渡す）
+  var ym = retroCalYear + '-' + ('0' + retroCalMonth).slice(-2);
+  if (retroWorkingDaysCache[ym]) {
+    drawRetroCalendarCells(retroWorkingDaysCache[ym]);
+    return;
+  }
+  google.script.run
+    .withSuccessHandler(function(days) {
+      // days = [{date:'yyyy-MM-dd', dow, label}, ...]
+      var list = (days || []).map(function(d) { return d.date; });
+      retroWorkingDaysCache[ym] = list;
+      // 描画前に月が切り替わっていたら無視
+      var currentYm = retroCalYear + '-' + ('0' + retroCalMonth).slice(-2);
+      if (currentYm !== ym) return;
+      drawRetroCalendarCells(list);
+    })
+    .withFailureHandler(function(err) {
+      console.error('過去勤務日取得エラー:', err);
+      drawRetroCalendarCells([]);
+    })
+    .api_getPastWorkingDays(ym);
+}
+
+function drawRetroCalendarCells(workableList) {
+  var grid = document.getElementById('retroCalGrid');
+  var html = '';
+  var dows = ['日','月','火','水','木','金','土'];
+  for (var i = 0; i < 7; i++) {
+    var cls = 'dow';
+    if (i === 0) cls += ' sun';
+    if (i === 6) cls += ' sat';
+    html += '<div class="' + cls + '">' + dows[i] + '</div>';
+  }
+
+  var firstDay = new Date(retroCalYear, retroCalMonth - 1, 1);
+  var startDow = firstDay.getDay();
+  var lastDate = new Date(retroCalYear, retroCalMonth, 0).getDate();
+  var today = new Date(); today.setHours(0,0,0,0);
+
+  // 先頭の空セル
+  for (var s = 0; s < startDow; s++) {
+    html += '<div class="retro-cal-cell empty"></div>';
+  }
+  for (var d = 1; d <= lastDate; d++) {
+    var dt = new Date(retroCalYear, retroCalMonth - 1, d);
+    var iso = retroCalYear + '-' + ('0' + retroCalMonth).slice(-2) + '-' + ('0' + d).slice(-2);
+    var slash = isoToSlash_(iso);
+    var inRange = (dt >= RETRO_MIN_DATE && dt <= today);
+    var isWorkable = inRange && workableList.indexOf(iso) >= 0;
+    var cls = 'retro-cal-cell';
+    if (!isWorkable) cls += ' disabled';
+    else cls += ' workable';
+    // 内部保持は ISO 形式のため ISO で比較
+    if (selectedRetroactiveLeaveDate === iso) cls += ' selected';
+    if (isWorkable) {
+      // data-date には ISO 形式を格納し、onclick にも ISO を渡す（表示はスラッシュ）
+      html += '<div class="' + cls + '" data-date="' + iso + '" onclick="selectRetroDate(\'' + iso + '\')">' + d + '</div>';
+    } else {
+      html += '<div class="' + cls + '">' + d + '</div>';
+    }
+  }
+  grid.innerHTML = html;
+}
+
+function selectRetroDate(isoDate) {
+  // 内部保持は ISO 形式（'yyyy-MM-dd'）、表示はスラッシュ形式
+  selectedRetroactiveLeaveDate = isoDate;
+  var slashDate = isoToSlash_(isoDate);
+  // 通常プルダウンの選択をクリア（排他）
+  var ld = document.getElementById('leaveDate');
+  if (ld) ld.selectedIndex = 0;
+  document.getElementById('retroSelectedInfo').textContent = '選択中: ' + slashDate + '（過去申請）';
+  // セルのselected再描画
+  var cells = document.querySelectorAll('#retroCalGrid .retro-cal-cell');
+  for (var i = 0; i < cells.length; i++) {
+    cells[i].classList.remove('selected');
+    if (cells[i].dataset && cells[i].dataset.date === isoDate) {
+      cells[i].classList.add('selected');
+    }
+  }
 }
 
 function showStep(n) {
@@ -597,7 +871,9 @@ function nextStep(n) {
     if (!kubun) { alert('休暇区分を選択してください'); return; }
   }
   if (currentStep === 2) {
-    if (!document.getElementById('leaveDate').value) { alert('休暇日を選択してください'); return; }
+    var hasNormal = !!document.getElementById('leaveDate').value;
+    var hasRetro = !!selectedRetroactiveLeaveDate;
+    if (!hasNormal && !hasRetro) { alert('休暇日を選択してください（過去申請カレンダーから選択することもできます）'); return; }
     var kubunVal = document.querySelector('input[name="leaveKubun"]:checked').value;
     if (kubunVal === '全日休') {
       // 半日区分スキップ → Step4へ
@@ -678,7 +954,11 @@ function buildConfirmation() {
   document.getElementById('cfmWorker').textContent = selectedWorkerId + ' ' + selectedWorkerName;
   document.getElementById('cfmKubun').textContent = kubun ? kubun.value : '';
   document.getElementById('cfmHalfDay').textContent = halfDay ? halfDay.value : '-';
-  document.getElementById('cfmDate').textContent = document.getElementById('leaveDate').value;
+  // 内部保持は ISO 形式のため、確認画面表示用にスラッシュ形式へ整形
+  var displayDate = selectedRetroactiveLeaveDate
+    ? isoToSlash_(selectedRetroactiveLeaveDate) + '（過去申請）'
+    : document.getElementById('leaveDate').value;
+  document.getElementById('cfmDate').textContent = displayDate;
   document.getElementById('cfmType').textContent = leaveType ? leaveType.value : '';
   document.getElementById('cfmSubDate').textContent = document.getElementById('substituteDate').value || '-';
 
@@ -697,12 +977,26 @@ function buildConfirmation() {
 
 function submitRequest() {
   var btn = document.getElementById('submitBtn');
-  btn.disabled = true;
-  btn.textContent = '送信中...';
 
   var kubun = document.querySelector('input[name="leaveKubun"]:checked');
   var halfDay = document.querySelector('input[name="halfDayType"]:checked');
   var leaveType = document.querySelector('input[name="leaveType"]:checked');
+
+  // 過去申請かどうか判定
+  var isRetro = !!selectedRetroactiveLeaveDate;
+  var effectiveLeaveDate = isRetro
+    ? selectedRetroactiveLeaveDate
+    : document.getElementById('leaveDate').value;
+
+  if (isRetro) {
+    // 表示はスラッシュ形式、送信はそのまま ISO 形式
+    if (!confirm('過去申請として送信します。\n対象日: ' + isoToSlash_(selectedRetroactiveLeaveDate) + '\n\n承認者および総務にすでにご連絡済みですか？\nよろしければ「OK」を押してください。')) {
+      return;
+    }
+  }
+
+  btn.disabled = true;
+  btn.textContent = '送信中...';
 
   var data = {
     deptId: selectedDeptId,
@@ -711,11 +1005,12 @@ function submitRequest() {
     workerName: selectedWorkerName,
     leaveKubun: kubun ? kubun.value : '',
     halfDayType: halfDay ? halfDay.value : '',
-    leaveDate: document.getElementById('leaveDate').value,
+    leaveDate: effectiveLeaveDate,
     leaveType: leaveType ? leaveType.value : '',
     substituteDate: document.getElementById('substituteDate').value,
     specialReason: document.getElementById('specialReason').value,
     paidDetail: document.getElementById('paidDetail').value,
+    isRetroactive: isRetro,
   };
 
   google.script.run
@@ -734,7 +1029,8 @@ function submitRequest() {
           + '</div>'
           + '</div>';
       } else {
-        alert('申請に失敗しました。');
+        var msg = (result && result.error) ? result.error : '申請に失敗しました。';
+        alert('申請に失敗しました：\n' + msg);
         btn.disabled = false;
         btn.textContent = '申請する';
       }
@@ -771,8 +1067,16 @@ function loadPendingRequests() {
             dateDisp = it.leaveDate + '(' + dayNames[dt.getDay()] + ')';
           }
         }
-        html += '<tr>'
-          + '<td>' + dateDisp + '</td>'
+        // 過去申請バッジ
+        var retroBadge = '';
+        var rowStyle = '';
+        if (it.isRetroactive === true) {
+          retroBadge = ' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-size:11px;font-weight:800;">&#128281; 過去申請</span>'
+            + (typeof it.daysAgo === 'number' ? ' <span style="font-size:11px;color:var(--muted);">(' + it.daysAgo + '日前)</span>' : '');
+          rowStyle = ' style="background:#fffbeb;"';
+        }
+        html += '<tr' + rowStyle + '>'
+          + '<td>' + dateDisp + retroBadge + '</td>'
           + '<td>' + it.deptName + '</td>'
           + '<td style="font-weight:700;">' + it.workerName + '</td>'
           + '<td>' + it.leaveKubun + (it.halfDayType ? '(' + it.halfDayType + ')' : '') + '</td>'

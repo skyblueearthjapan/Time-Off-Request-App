@@ -52,9 +52,29 @@ function api_submitLeaveRequest(data) {
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
+    // ====== バリデーション: 休暇日 ======
+    var leaveDateStr = normalize_(data.leaveDate || '');
+    if (!leaveDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(leaveDateStr)) {
+      return { ok: false, error: '休暇日の形式が不正です（yyyy-MM-dd）。' };
+    }
+
+    var isRetroactive = data.isRetroactive === true;
+    if (isRetroactive) {
+      // 過去日遡及申請: 今年度内（3/16〜今日）のみ許容
+      if (!isWithinCurrentFiscalYear_(leaveDateStr)) {
+        return { ok: false, error: '過去日申請は今年度内（年度開始の3/16から本日まで）の日付のみ指定できます。' };
+      }
+    } else {
+      // 通常申請: 従来通り api_getWorkingDays() の範囲内（今日〜年度末）に含まれること
+      var allowed = api_getWorkingDays();
+      if (allowed.indexOf(leaveDateStr) < 0) {
+        return { ok: false, error: '指定された休暇日は勤務日ではありません。過去日の場合は「過去申請」から選択してください。' };
+      }
+    }
+
     var reqId = generateReqId_();
     var now = new Date();
-    var leaveDate = new Date(data.leaveDate);
+    var leaveDate = new Date(leaveDateStr + 'T00:00:00+09:00');
     var fy = computeFiscalYear_(leaveDate);
 
     var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
@@ -270,6 +290,8 @@ function api_getUpcomingLeaves(deptId, workerId) {
       if (leaveDate < today) continue;
     }
 
+    var leaveDateIso = leaveDate instanceof Date ? fmtDate_(leaveDate) : '';
+    var appliedAt = row[idx['申請日時']];
     out.push({
       reqId: normalize_(row[idx['REQ_ID']]),
       deptName: normalize_(row[idx['部署名']]),
@@ -279,6 +301,8 @@ function api_getUpcomingLeaves(deptId, workerId) {
       leaveDate: leaveDate instanceof Date ? fmtDate_(leaveDate, 'yyyy/MM/dd') : '',
       leaveType: normalize_(row[idx['休暇種類']]),
       status: status,
+      isRetroactive: computeIsRetroactive_(appliedAt, leaveDateIso),
+      daysAgo: computeDaysAgo_(leaveDateIso, today),
     });
   }
 
@@ -315,6 +339,7 @@ function api_getAllPendingRequests() {
 
     var leaveDate = row[idx['休暇日']];
     var submittedAt = row[idx['申請日時']];
+    var leaveDateIso = leaveDate instanceof Date ? fmtDate_(leaveDate) : '';
 
     out.push({
       reqId: rowReqId,
@@ -326,6 +351,8 @@ function api_getAllPendingRequests() {
       leaveType: normalize_(row[idx['休暇種類']]),
       submittedAt: submittedAt instanceof Date ? fmtDate_(submittedAt, 'MM/dd HH:mm') : '',
       status: status,
+      isRetroactive: computeIsRetroactive_(submittedAt, leaveDateIso),
+      daysAgo: computeDaysAgo_(leaveDateIso),
     });
   }
 
@@ -480,6 +507,8 @@ function api_getPending2ndApprovals() {
     if (at2Col !== undefined && row[at2Col] && String(row[at2Col]).trim() !== '') continue;
 
     var leaveDate = row[idx['休暇日']];
+    var appliedAt = row[idx['申請日時']];
+    var leaveDateIso = leaveDate instanceof Date ? fmtDate_(leaveDate) : '';
     out.push({
       reqId: reqId,
       deptName: normalize_(row[idx['部署名']]),
@@ -488,6 +517,8 @@ function api_getPending2ndApprovals() {
       leaveKubun: normalize_(row[idx['休暇区分']]),
       leaveType: normalize_(row[idx['休暇種類']]),
       approvedAt: row[idx['承認日時']] instanceof Date ? fmtDate_(row[idx['承認日時']], 'yyyy/MM/dd HH:mm') : '',
+      isRetroactive: computeIsRetroactive_(appliedAt, leaveDateIso),
+      daysAgo: computeDaysAgo_(leaveDateIso),
     });
   }
 

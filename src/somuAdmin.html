@@ -248,10 +248,17 @@ function renderPending2() {
 
   for (var i = 0; i < pending2Data.length; i++) {
     var d = pending2Data[i];
-    html += '<tr data-reqid="' + escHtml(d.reqId) + '" style="transition:all .5s ease;">'
+    var retroBadge = '';
+    var rowExtra = '';
+    if (d.isRetroactive === true) {
+      retroBadge = ' <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#fee2e2;color:#b91c1c;border:1px solid #fca5a5;font-size:11px;font-weight:800;">&#128281; 過去申請</span>'
+        + (typeof d.daysAgo === 'number' ? ' <span style="font-size:11px;color:var(--muted);">(' + d.daysAgo + '日前)</span>' : '');
+      rowExtra = 'background:#fffbeb;';
+    }
+    html += '<tr data-reqid="' + escHtml(d.reqId) + '" style="transition:all .5s ease;' + rowExtra + '">'
       + '<td><input type="checkbox" class="row-check" data-idx="' + i + '" onchange="updateSelectedCount()"></td>'
       + '<td>' + escHtml(d.deptName) + '</td>'
-      + '<td>' + escHtml(d.workerName) + '</td>'
+      + '<td>' + escHtml(d.workerName) + retroBadge + '</td>'
       + '<td>' + escHtml(d.leaveDate) + '</td>'
       + '<td>' + escHtml(d.leaveType) + '</td>'
       + '<td>' + escHtml(d.leaveKubun) + '</td>'

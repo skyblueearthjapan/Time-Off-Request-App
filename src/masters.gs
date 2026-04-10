@@ -432,3 +432,91 @@ function api_getWorkingDays() {
   }
   return result;
 }
+
+/**
+ * 過去日（3/16〜今日）の勤務日一覧を月単位で返す
+ * 休日/祝日を除外（api_getWorkingDays と同じロジックで判定）
+ * @param {string|number} yearMonth 'yyyy-MM' 文字列または 'yyyyMM' 数値文字列（省略時は今月）
+ * @return {Array<{date:string, dow:number, label:string}>}
+ */
+function api_getPastWorkingDays(yearMonth) {
+  var today = new Date();
+  var todayKey = fmtDate_(today);
+
+  // 対象月の決定: 'yyyy-MM' / 'yyyyMM' / 数値 いずれも許容
+  var ym = normalize_(yearMonth == null ? '' : String(yearMonth));
+  var y, m;
+  if (/^\d{4}-\d{2}$/.test(ym)) {
+    y = parseInt(ym.substring(0, 4), 10);
+    m = parseInt(ym.substring(5, 7), 10);
+  } else if (/^\d{6}$/.test(ym)) {
+    // 将来互換: yyyyMM 形式（数値文字列）
+    y = parseInt(ym.substring(0, 4), 10);
+    m = parseInt(ym.substring(4, 6), 10);
+  } else {
+    y = today.getFullYear();
+    m = today.getMonth() + 1;
+  }
+
+  // 範囲: 今年度の3/16 および 月初 のうち新しい方 〜 今日 および 月末 のうち古い方
+  var fyStart = getFiscalYearStartDate_(today);
+  var monthStart = new Date(y, m - 1, 1, 0, 0, 0);
+  var monthEnd = new Date(y, m, 0, 23, 59, 59);
+  var rangeStart = monthStart > fyStart ? monthStart : fyStart;
+  var rangeEndDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  var rangeEnd = monthEnd < rangeEndDate ? monthEnd : rangeEndDate;
+  if (rangeStart > rangeEnd) return [];
+
+  // M_CALENDAR 読込
+  var calMap = {};
+  var sh = getDb_().getSheetByName(SHEET.CALENDAR);
+  if (sh && sh.getLastRow() >= 2) {
+    var values = sh.getDataRange().getValues();
+    var H = values[0].map(function(h) { return normalize_(h); });
+    var dateIdx = H.indexOf('日付');
+    var kubunIdx = H.indexOf('区分');
+    if (dateIdx >= 0 && kubunIdx >= 0) {
+      for (var r = 1; r < values.length; r++) {
+        var d = values[r][dateIdx];
+        if (!d) continue;
+        if (!(d instanceof Date)) d = new Date(d);
+        if (isNaN(d.getTime())) continue;
+        calMap[fmtDate_(d)] = normalize_(values[r][kubunIdx]);
+      }
+    }
+  }
+
+  // 祝日補完マップ（M_CALENDAR未登録期間向け）
+  var publicHolidays = getJapanesePublicHolidays_();
+
+  var dowNames = ['日', '月', '火', '水', '木', '金', '土'];
+  var result = [];
+  var cursor = new Date(rangeStart);
+  while (cursor <= rangeEnd) {
+    var key = fmtDate_(cursor);
+    if (key > todayKey) break;
+    var dow = cursor.getDay();
+    var kubun = calMap[key] || '';
+    var isWorkDay = false;
+    if (kubun === '休日' || kubun === '祝日') {
+      isWorkDay = false;
+    } else if (kubun === '出勤土曜') {
+      isWorkDay = true;
+    } else if (dow >= 1 && dow <= 5) {
+      // 平日: M_CALENDAR未登録でも祝日マップに該当すれば除外
+      if (publicHolidays[key]) isWorkDay = false;
+      else isWorkDay = true;
+    } else {
+      isWorkDay = false;
+    }
+    if (isWorkDay) {
+      result.push({
+        date: key,
+        dow: dow,
+        label: key + '（' + dowNames[dow] + '）',
+      });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return result;
+}

@@ -175,6 +175,60 @@ function getSheetHeaderIndex_(sheetName, headerRowNo) {
   return { sh: sh, header: header, idx: buildHeaderIndex_(header) };
 }
 
+// ====== 過去日遡及申請ヘルパー ======
+
+/**
+ * 当該日が属する年度の開始日（3/16）を返す
+ * computeFiscalYear_ (leaveRequest.gs) を再利用し、年度算出ロジックを一元化
+ */
+function getFiscalYearStartDate_(dateObj) {
+  var fy = computeFiscalYear_(dateObj || new Date());
+  return new Date(fy, 2, 16, 0, 0, 0); // 3月は index=2
+}
+
+/**
+ * 文字列（yyyy-MM-dd）が今年度内（3/16〜今日）の範囲に収まっているか判定
+ * タイムゾーン安全化のため、全て 'yyyy-MM-dd' 文字列化して比較する
+ */
+function isWithinCurrentFiscalYear_(dateStr) {
+  if (!dateStr || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  var today = new Date();
+  var fyStart = getFiscalYearStartDate_(today);
+  var fyStartStr = Utilities.formatDate(fyStart, TZ, 'yyyy-MM-dd');
+  var todayStr = Utilities.formatDate(today, TZ, 'yyyy-MM-dd');
+  return dateStr >= fyStartStr && dateStr <= todayStr;
+}
+
+/**
+ * 申請日時と休暇日から「過去日申請か」を算出
+ * appliedAt の日付 > leaveDate の場合 true
+ */
+function computeIsRetroactive_(appliedAt, leaveDateStr) {
+  if (!appliedAt || !leaveDateStr) return false;
+  var applied = (appliedAt instanceof Date) ? appliedAt : new Date(appliedAt);
+  if (isNaN(applied.getTime())) return false;
+  var appliedDayStr = Utilities.formatDate(applied, TZ, 'yyyy-MM-dd');
+  var ldStr = (leaveDateStr instanceof Date) ? Utilities.formatDate(leaveDateStr, TZ, 'yyyy-MM-dd') : String(leaveDateStr).substring(0, 10);
+  return appliedDayStr > ldStr;
+}
+
+/**
+ * 休暇日から「何日前の申請か」を算出
+ * 今日 - leaveDate、過去日でなければ 0
+ */
+function computeDaysAgo_(leaveDateStr, today) {
+  if (!leaveDateStr) return 0;
+  var t = today || new Date();
+  var t0 = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  var ldStr = (leaveDateStr instanceof Date) ? Utilities.formatDate(leaveDateStr, TZ, 'yyyy-MM-dd') : String(leaveDateStr).substring(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ldStr)) return 0;
+  var ld = new Date(ldStr + 'T00:00:00+09:00');
+  if (isNaN(ld.getTime())) return 0;
+  var diffMs = t0.getTime() - ld.getTime();
+  var diffDays = Math.floor(diffMs / 86400000);
+  return diffDays > 0 ? diffDays : 0;
+}
+
 function getLookupValues_(category) {
   var sh = requireSheet_(SHEET.LOOKUP);
   var values = sh.getDataRange().getValues();
