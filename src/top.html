@@ -386,6 +386,10 @@
         <label>対象者</label>
         <div id="editInfo" style="font-weight:700;font-size:14px;padding:4px 0;"></div>
       </div>
+      <div id="editSubstituteNotice" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:8px 10px;margin-bottom:10px;color:#92400e;font-size:12px;line-height:1.5;">
+        ※ この申請は<strong>振替休暇</strong>です。振替休暇は同じ月次期間（前月16日〜当月15日）で消化する必要があります。<br>
+        別期間に移動したい場合は、この申請を<strong>削除して新規作成</strong>してください。
+      </div>
       <div class="form-group">
         <label>休暇日</label>
         <input type="date" id="editLeaveDate" style="width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:14px;" />
@@ -1135,6 +1139,10 @@ function openEditLeaveModal(reqId) {
   EDIT_LEAVE_CTX = { reqId: reqId, item: item };
 
   document.getElementById('editInfo').textContent = item.deptName + ' ／ ' + item.workerName;
+
+  // 振替休暇の場合は月次制約の注記を表示
+  var notice = document.getElementById('editSubstituteNotice');
+  if (notice) notice.style.display = (item.leaveType === '振替休暇') ? '' : 'none';
 
   // 休暇日（yyyy/MM/dd → yyyy-MM-dd に変換）
   var dateVal = (item.leaveDate || '').replace(/\//g, '-');

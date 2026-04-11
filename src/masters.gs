@@ -243,13 +243,11 @@ function api_getHolidayDays(workerId) {
   // 日本の祝日マップ（一般カレンダー補完用）
   var publicHolidays = getJapanesePublicHolidays_();
 
-  // 年度範囲を算出（年度初め〜今日＋7日先）
+  // 年度範囲を算出（年度初め〜今日＋7日先、時刻は0時起点で統一）
   var today = new Date();
-  var _m = today.getMonth() + 1, _d = today.getDate();
-  var fy = (_m < 3 || (_m === 3 && _d < 16)) ? today.getFullYear() - 1 : today.getFullYear();
+  var fy = computeFiscalYear_(today);
   var startDate = new Date(fy, 2, 16); // 3/16
-  var endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 7);
+  var endDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 7);
 
   var result = [];
   var cursor = new Date(startDate);
@@ -295,8 +293,8 @@ function api_getHolidayDays(workerId) {
           var target = normalize_(workerId);
           for (var rr = 1; rr < lrValues.length; rr++) {
             var lrow = lrValues[rr];
-            if (normalize_(lrow[ltCol]) !== '振替休暇') continue;
-            if (normalize_(lrow[stCol]) === '取消') continue;
+            if (normalize_(lrow[ltCol]) !== LEAVE_TYPE.SUBSTITUTE) continue;
+            if (normalize_(lrow[stCol]) === STATUS.CANCELED) continue;
             if (normalize_(lrow[wIdCol]) !== target) continue;
             var sd = lrow[subCol];
             if (!sd) continue;

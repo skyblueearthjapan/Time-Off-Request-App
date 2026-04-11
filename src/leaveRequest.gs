@@ -107,7 +107,7 @@ function validateSubstituteUniqueness_(workerId, subDateStr, excludeReqId) {
     var row = values[r];
     if (reqCol !== undefined && excludeReqId && normalize_(row[reqCol]) === normalize_(excludeReqId)) continue;
     if (normalize_(row[ltCol]) !== LEAVE_TYPE.SUBSTITUTE) continue;
-    if (normalize_(row[stCol]) === '取消') continue;
+    if (normalize_(row[stCol]) === STATUS.CANCELED) continue;
     if (normalize_(row[wIdCol]) !== normalize_(workerId)) continue;
     var sd = row[subCol];
     if (!sd) continue;
@@ -213,7 +213,7 @@ function api_submitLeaveRequest(data) {
     setCol('半日区分', data.halfDayType || '');
     setCol('休暇日', leaveDate);
     setCol('休暇種類', data.leaveType || '');
-    setCol('振替元出勤日', data.substituteDate ? new Date(data.substituteDate) : '');
+    setCol('振替元出勤日', data.substituteDate ? new Date(data.substituteDate + 'T00:00:00+09:00') : '');
     setCol('特別理由', data.specialReason || '');
     setCol('有給詳細', data.paidDetail || '');
     setCol('申請日時', now);
@@ -880,19 +880,23 @@ function api_editLeaveRequest(reqId, patch) {
 
     // ====== 振替休暇バリデーション ======
     // 休暇種類が振替休暇の場合、月次期間・重複チェックを実施
-    if (req.leaveType === '振替休暇') {
+    if (req.leaveType === LEAVE_TYPE.SUBSTITUTE) {
       var effLeaveDateStr = leaveDate || req.leaveDate;
       var effSubDateStr = substituteDate || req.substituteDate;
-      if (effLeaveDateStr && effSubDateStr) {
-        var effLeaveDate = new Date(effLeaveDateStr + 'T00:00:00+09:00');
-        var effSubDate = new Date(effSubDateStr + 'T00:00:00+09:00');
-        var editMpCheck = validateSubstituteMonthlyPeriod_(effLeaveDate, effSubDate);
-        if (!editMpCheck.ok) throw new Error(editMpCheck.error);
-        // 振替元が変更された場合のみ重複チェック
-        if (substituteDate && substituteDate !== req.substituteDate) {
-          var editUniqCheck = validateSubstituteUniqueness_(req.workerId, substituteDate, reqId);
-          if (!editUniqCheck.ok) throw new Error(editUniqCheck.error);
-        }
+      if (!effSubDateStr) {
+        throw new Error('振替休暇には振替元出勤日が必須です。編集画面から振替元を指定してください。');
+      }
+      if (!effLeaveDateStr) {
+        throw new Error('振替休暇には休暇日が必須です。');
+      }
+      var effLeaveDate = new Date(effLeaveDateStr + 'T00:00:00+09:00');
+      var effSubDate = new Date(effSubDateStr + 'T00:00:00+09:00');
+      var editMpCheck = validateSubstituteMonthlyPeriod_(effLeaveDate, effSubDate);
+      if (!editMpCheck.ok) throw new Error(editMpCheck.error);
+      // 振替元が変更された場合のみ重複チェック
+      if (substituteDate && substituteDate !== req.substituteDate) {
+        var editUniqCheck = validateSubstituteUniqueness_(req.workerId, substituteDate, reqId);
+        if (!editUniqCheck.ok) throw new Error(editUniqCheck.error);
       }
     }
 
@@ -901,10 +905,9 @@ function api_editLeaveRequest(reqId, patch) {
     var idx = info.idx;
     var rowNo = req.rowNo;
 
-    // 休暇日の更新
+    // 休暇日の更新（JSTを明示してDateオブジェクトとして書込み）
     if (leaveDate) {
-      sh.getRange(rowNo, idx['休暇日'] + 1).setValue(leaveDate);
-      // 年度も再計算
+      sh.getRange(rowNo, idx['休暇日'] + 1).setValue(new Date(leaveDate + 'T00:00:00+09:00'));
       var newFy = computeFiscalYear_(new Date(leaveDate + 'T00:00:00+09:00'));
       if (idx['年度'] !== undefined) sh.getRange(rowNo, idx['年度'] + 1).setValue(newFy);
     }
@@ -915,13 +918,14 @@ function api_editLeaveRequest(reqId, patch) {
       if (leaveKubun === LEAVE_KUBUN.FULL_DAY) {
         // 全日休の場合は半日区分をクリア
         sh.getRange(rowNo, idx['半日区分'] + 1).setValue('');
-      } else {
+      } else if (halfDayType) {
+        // patch に半日区分が明示された場合のみ更新（空文字で既存値クリアを防止）
         sh.getRange(rowNo, idx['半日区分'] + 1).setValue(halfDayType);
       }
     }
 
     // 振替元出勤日の更新（振替休暇の場合のみ）
-    if (substituteDate && req.leaveType === '振替休暇' && idx['振替元出勤日'] !== undefined) {
+    if (substituteDate && req.leaveType === LEAVE_TYPE.SUBSTITUTE && idx['振替元出勤日'] !== undefined) {
       sh.getRange(rowNo, idx['振替元出勤日'] + 1).setValue(new Date(substituteDate + 'T00:00:00+09:00'));
     }
 
