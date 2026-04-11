@@ -210,77 +210,132 @@ function api_getLookupData() {
 }
 
 /**
- * 休日出勤日（振替元）の候補を返す（年度内の休日・祝日・土日）
- * M_CALENDARにデータがある期間はそちらを優先、
- * データがない期間は一般的な土日・祝日（日本の国民の祝日）で自動補完
+ * 作業員IDからGoogleアカウント（メール）を取得
  */
-function api_getHolidayDays() {
-  // M_CALENDARからデータ取得
-  var calMap = {};
-  var calCoveredDates = {};
-  var sh = getDb_().getSheetByName(SHEET.CALENDAR);
-  if (sh && sh.getLastRow() >= 2) {
-    var values = sh.getDataRange().getValues();
-    var H = values[0].map(function(h) { return normalize_(h); });
-    var dateIdx = H.indexOf('日付');
-    var kubunIdx = H.indexOf('区分');
-    if (dateIdx >= 0 && kubunIdx >= 0) {
-      for (var r = 1; r < values.length; r++) {
-        var d = values[r][dateIdx];
-        if (!d) continue;
-        if (!(d instanceof Date)) d = new Date(d);
-        if (isNaN(d.getTime())) continue;
-        var key = fmtDate_(d);
-        calMap[key] = normalize_(values[r][kubunIdx]);
-        calCoveredDates[key] = true;
-      }
+function getWorkerEmailById_(workerId) {
+  if (!workerId) return '';
+  var sh = getDb_().getSheetByName(SHEET.WORKER);
+  if (!sh || sh.getLastRow() < 2) return '';
+  var values = sh.getDataRange().getValues();
+  var H = values[0].map(function(h) { return normalize_(h); });
+  var codeIdx = H.indexOf('作業員コード');
+  if (codeIdx < 0) codeIdx = H.indexOf('作業員ID');
+  var emailIdx = H.findIndex(function(h) { return h.indexOf('Googleアカウント') >= 0; });
+  if (codeIdx < 0 || emailIdx < 0) return '';
+  var target = normalize_(workerId);
+  for (var r = 1; r < values.length; r++) {
+    if (normalize_(values[r][codeIdx]) === target) {
+      return normalize_(values[r][emailIdx]).toLowerCase();
     }
   }
+  return '';
+}
 
-  // 日本の祝日マップ（一般カレンダー補完用）
-  var publicHolidays = getJapanesePublicHolidays_();
+/**
+ * 休日出勤日（振替元）の候補を返す
+ * 残業・休日出勤申請app の Requests シートから、指定作業員の
+ * requestType='holiday' かつ status≠'canceled' の申請を抽出。
+ * 既に他の振替休暇で使用済みの日は除外（削除＝取消済は再利用可）。
+ * @param {string} workerId 作業員ID（未指定なら空配列）
+ * @return {Array<{date, label, status, requestId}>}
+ */
+function api_getHolidayDays(workerId) {
+  if (!workerId) return [];
+  var email = getWorkerEmailById_(workerId);
+  if (!email) {
+    console.warn('api_getHolidayDays: workerIdからメール取得失敗 ' + workerId);
+    return [];
+  }
 
-  // 年度範囲を算出（年度初め〜今日＋7日先）
-  // 未来の休日出勤（例: 今週末の土日）を振替元として選べるよう、終端を7日先まで拡張
+  // 年度開始日（3/16〜）
   var today = new Date();
   var _m = today.getMonth() + 1, _d = today.getDate();
   var fy = (_m < 3 || (_m === 3 && _d < 16)) ? today.getFullYear() - 1 : today.getFullYear();
-  var startDate = new Date(fy, 2, 16); // 3/16
-  var endDate = new Date(today);
-  endDate.setDate(endDate.getDate() + 7);
+  var fyStartStr = fmtDate_(new Date(fy, 2, 16));
 
-  var result = [];
-  var cursor = new Date(startDate);
-  while (cursor <= endDate) {
-    var key = fmtDate_(cursor);
-    var dow = cursor.getDay();
+  // 残業・休日出勤申請app の RequestsシートからSSIDを取得
+  var settings = getSettings_();
+  var overtimeSSID = normalize_(settings['CALENDAR_SOURCE_SSID']) ||
+    '1Knx_kaQMZZams65J1oeSDaBeWUt8XXanNe94XSAHKFQ';
 
-    if (calCoveredDates[key]) {
-      // M_CALENDARにデータあり → カレンダーの区分に従う
-      var kubun = calMap[key];
-      if (kubun === '休日' || kubun === '祝日') {
-        result.push({ date: key, label: kubun });
-      } else if (kubun === '出勤土曜') {
-        // 出勤土曜は勤務日 → 候補に含めない
-      } else if (dow === 0 || dow === 6) {
-        result.push({ date: key, label: dow === 0 ? '日曜' : '土曜' });
-      }
-    } else {
-      // M_CALENDARにデータなし → 一般カレンダーで補完
-      if (publicHolidays[key]) {
-        result.push({ date: key, label: '祝日（' + publicHolidays[key] + '）' });
-      } else if (dow === 0) {
-        result.push({ date: key, label: '日曜' });
-      } else if (dow === 6) {
-        result.push({ date: key, label: '土曜' });
-      }
-      // 振替休日チェック（祝日が日曜の場合、月曜が振替休日）
-      // → publicHolidaysに含めて対応済み
+  var candidates = [];
+  try {
+    var srcSS = SpreadsheetApp.openById(overtimeSSID);
+    var reqSh = srcSS.getSheetByName('Requests');
+    if (!reqSh || reqSh.getLastRow() < 2) return [];
+    var values = reqSh.getDataRange().getValues();
+    var H = values[0].map(function(h) { return normalize_(h); });
+    var iType = H.indexOf('requestType(overtime/holiday)');
+    var iStatus = H.indexOf('status(submitted/approved/canceled)');
+    var iEmail = H.indexOf('workerEmail');
+    var iDate = H.indexOf('targetDate');
+    var iReqId = H.indexOf('requestId');
+    if (iType < 0 || iStatus < 0 || iEmail < 0 || iDate < 0) {
+      console.warn('Requestsシートの必要列が見つかりません: ' + H.join(','));
+      return [];
     }
 
-    cursor.setDate(cursor.getDate() + 1);
+    var seen = {};
+    for (var r = 1; r < values.length; r++) {
+      var row = values[r];
+      if (normalize_(row[iType]) !== 'holiday') continue;
+      var st = normalize_(row[iStatus]);
+      if (!st || st === 'canceled') continue;
+      if (normalize_(row[iEmail]).toLowerCase() !== email) continue;
+      var td = row[iDate];
+      if (!td) continue;
+      if (!(td instanceof Date)) td = new Date(td);
+      if (isNaN(td.getTime())) continue;
+      var key = fmtDate_(td);
+      if (key < fyStartStr) continue;
+      if (seen[key]) continue;
+      seen[key] = true;
+      candidates.push({
+        date: key,
+        label: st === 'approved' ? '承認済' : '申請済',
+        status: st,
+        requestId: iReqId >= 0 ? normalize_(row[iReqId]) : ''
+      });
+    }
+  } catch (e) {
+    console.error('Requests取得エラー: ' + e.message);
+    return [];
   }
-  return result;
+
+  // 既に使用済みの振替元出勤日を除外（取消状態は除外対象から外す＝再利用可）
+  try {
+    var lrInfo = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+    var lrSh = lrInfo.sh;
+    var lrIdx = lrInfo.idx;
+    if (lrSh && lrSh.getLastRow() >= 2) {
+      var lrValues = lrSh.getDataRange().getValues();
+      var subCol = lrIdx['振替元出勤日'];
+      var stCol = lrIdx['承認状態'];
+      var ltCol = lrIdx['休暇種類'];
+      var wIdCol = lrIdx['作業員ID'];
+      if (subCol !== undefined && stCol !== undefined && ltCol !== undefined && wIdCol !== undefined) {
+        var usedDates = {};
+        var target = normalize_(workerId);
+        for (var rr = 1; rr < lrValues.length; rr++) {
+          var lrow = lrValues[rr];
+          if (normalize_(lrow[ltCol]) !== '振替休暇') continue;
+          if (normalize_(lrow[stCol]) === '取消') continue;
+          if (normalize_(lrow[wIdCol]) !== target) continue;
+          var sd = lrow[subCol];
+          if (!sd) continue;
+          if (!(sd instanceof Date)) sd = new Date(sd);
+          if (isNaN(sd.getTime())) continue;
+          usedDates[fmtDate_(sd)] = true;
+        }
+        candidates = candidates.filter(function(c) { return !usedDates[c.date]; });
+      }
+    }
+  } catch (e) {
+    console.error('使用済み振替元除外エラー: ' + e.message);
+  }
+
+  candidates.sort(function(a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  return candidates;
 }
 
 /**

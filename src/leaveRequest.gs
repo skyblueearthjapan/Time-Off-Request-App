@@ -44,6 +44,86 @@ function computeFiscalYear_(dateObj) {
 }
 
 /**
+ * 月次期間（前月16日〜当月15日）を返す
+ * 例: 4/5 → {start:3/16, end:4/15},  4/20 → {start:4/16, end:5/15}
+ */
+function computeMonthlyPeriod_(dateObj) {
+  var y = dateObj.getFullYear();
+  var m = dateObj.getMonth(); // 0-11
+  var d = dateObj.getDate();
+  var start, end;
+  if (d >= 16) {
+    start = new Date(y, m, 16);
+    end = new Date(y, m + 1, 15);
+  } else {
+    start = new Date(y, m - 1, 16);
+    end = new Date(y, m, 15);
+  }
+  return { start: start, end: end };
+}
+
+/**
+ * 振替休暇の月次期間整合チェック
+ * 休暇日と振替元出勤日が同じ月次期間（前月16〜当月15）に収まっている必要がある
+ * @return {object} {ok, error}
+ */
+function validateSubstituteMonthlyPeriod_(leaveDate, subDate) {
+  var lp = computeMonthlyPeriod_(leaveDate);
+  var sp = computeMonthlyPeriod_(subDate);
+  if (lp.start.getTime() !== sp.start.getTime()) {
+    return {
+      ok: false,
+      error: '振替休暇は同一月次期間（前月16日〜当月15日）内で消化する必要があります。\n' +
+             '休暇日: ' + fmtDate_(leaveDate) + '（期間: ' + fmtDate_(lp.start) + '〜' + fmtDate_(lp.end) + '）\n' +
+             '振替元: ' + fmtDate_(subDate) + '（期間: ' + fmtDate_(sp.start) + '〜' + fmtDate_(sp.end) + '）'
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * 振替元出勤日の重複チェック（同じ作業員で既に使用済みでないか）
+ * @param {string} workerId
+ * @param {string} subDateStr 'yyyy-MM-dd'
+ * @param {string} excludeReqId 編集時の除外対象REQ_ID（省略可）
+ * @return {object} {ok, error}
+ */
+function validateSubstituteUniqueness_(workerId, subDateStr, excludeReqId) {
+  if (!workerId || !subDateStr) return { ok: true };
+  var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
+  var sh = info.sh;
+  var idx = info.idx;
+  if (!sh || sh.getLastRow() < 2) return { ok: true };
+  var values = sh.getDataRange().getValues();
+  var subCol = idx['振替元出勤日'];
+  var stCol = idx['承認状態'];
+  var ltCol = idx['休暇種類'];
+  var wIdCol = idx['作業員ID'];
+  var reqCol = idx['REQ_ID'];
+  if (subCol === undefined || stCol === undefined || ltCol === undefined || wIdCol === undefined) {
+    return { ok: true };
+  }
+  for (var r = 1; r < values.length; r++) {
+    var row = values[r];
+    if (reqCol !== undefined && excludeReqId && normalize_(row[reqCol]) === normalize_(excludeReqId)) continue;
+    if (normalize_(row[ltCol]) !== LEAVE_TYPE.SUBSTITUTE) continue;
+    if (normalize_(row[stCol]) === '取消') continue;
+    if (normalize_(row[wIdCol]) !== normalize_(workerId)) continue;
+    var sd = row[subCol];
+    if (!sd) continue;
+    if (!(sd instanceof Date)) sd = new Date(sd);
+    if (isNaN(sd.getTime())) continue;
+    if (fmtDate_(sd) === subDateStr) {
+      return {
+        ok: false,
+        error: '指定された振替元出勤日（' + subDateStr + '）は既に別の振替休暇申請で使用されています。'
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
  * 申請登録
  * data: { deptId, deptName, workerId, workerName, leaveKubun, halfDayType,
  *         leaveDate, leaveType, substituteDate, specialReason, paidDetail, additionalDetail }
@@ -72,9 +152,26 @@ function api_submitLeaveRequest(data) {
       }
     }
 
+    var leaveDate = new Date(leaveDateStr + 'T00:00:00+09:00');
+
+    // ====== バリデーション: 振替休暇 ======
+    // 振替休暇は LEAVE_TYPE (休暇種類) で判定（LEAVE_KUBUN は全日休/半日休）
+    if (data.leaveType === LEAVE_TYPE.SUBSTITUTE) {
+      var subDateStr = normalize_(data.substituteDate || '');
+      if (!subDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(subDateStr)) {
+        return { ok: false, error: '振替休暇の場合は振替元出勤日を選択してください。' };
+      }
+      var subDate = new Date(subDateStr + 'T00:00:00+09:00');
+      // 月次期間整合チェック（前月16〜当月15）
+      var mpCheck = validateSubstituteMonthlyPeriod_(leaveDate, subDate);
+      if (!mpCheck.ok) return { ok: false, error: mpCheck.error };
+      // 重複チェック（同じ作業員で既に使用済みでないか）
+      var uniqCheck = validateSubstituteUniqueness_(data.workerId, subDateStr, null);
+      if (!uniqCheck.ok) return { ok: false, error: uniqCheck.error };
+    }
+
     var reqId = generateReqId_();
     var now = new Date();
-    var leaveDate = new Date(leaveDateStr + 'T00:00:00+09:00');
     var fy = computeFiscalYear_(leaveDate);
 
     var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
@@ -765,6 +862,7 @@ function api_editLeaveRequest(reqId, patch) {
     var leaveDate = normalize_(patch.leaveDate || '');
     var leaveKubun = normalize_(patch.leaveKubun || '');
     var halfDayType = normalize_(patch.halfDayType || '');
+    var substituteDate = normalize_(patch.substituteDate || '');
 
     // バリデーション
     if (leaveDate && !/^\d{4}-\d{2}-\d{2}$/.test(leaveDate)) {
@@ -775,6 +873,27 @@ function api_editLeaveRequest(reqId, patch) {
     }
     if (leaveKubun === LEAVE_KUBUN.HALF_DAY && halfDayType !== HALF_DAY_TYPE.AM && halfDayType !== HALF_DAY_TYPE.PM) {
       throw new Error('半日区分を選択してください。');
+    }
+    if (substituteDate && !/^\d{4}-\d{2}-\d{2}$/.test(substituteDate)) {
+      throw new Error('振替元出勤日の形式が不正です: ' + substituteDate);
+    }
+
+    // ====== 振替休暇バリデーション ======
+    // 休暇種類が振替休暇の場合、月次期間・重複チェックを実施
+    if (req.leaveType === '振替休暇') {
+      var effLeaveDateStr = leaveDate || req.leaveDate;
+      var effSubDateStr = substituteDate || req.substituteDate;
+      if (effLeaveDateStr && effSubDateStr) {
+        var effLeaveDate = new Date(effLeaveDateStr + 'T00:00:00+09:00');
+        var effSubDate = new Date(effSubDateStr + 'T00:00:00+09:00');
+        var editMpCheck = validateSubstituteMonthlyPeriod_(effLeaveDate, effSubDate);
+        if (!editMpCheck.ok) throw new Error(editMpCheck.error);
+        // 振替元が変更された場合のみ重複チェック
+        if (substituteDate && substituteDate !== req.substituteDate) {
+          var editUniqCheck = validateSubstituteUniqueness_(req.workerId, substituteDate, reqId);
+          if (!editUniqCheck.ok) throw new Error(editUniqCheck.error);
+        }
+      }
     }
 
     var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
@@ -799,6 +918,11 @@ function api_editLeaveRequest(reqId, patch) {
       } else {
         sh.getRange(rowNo, idx['半日区分'] + 1).setValue(halfDayType);
       }
+    }
+
+    // 振替元出勤日の更新（振替休暇の場合のみ）
+    if (substituteDate && req.leaveType === '振替休暇' && idx['振替元出勤日'] !== undefined) {
+      sh.getRange(rowNo, idx['振替元出勤日'] + 1).setValue(new Date(substituteDate + 'T00:00:00+09:00'));
     }
 
     // 承認済みの場合は申請中に戻す

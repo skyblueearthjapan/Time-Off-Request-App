@@ -315,10 +315,14 @@
       <div class="step" data-step="5">
         <div class="form-group">
           <label>休日出勤した日を選択してください</label>
-          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">
-            振替元となる休日出勤日を選んでください
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;line-height:1.6;">
+            <strong>振替元となる休日出勤日を選んでください</strong><br>
+            ※「残業・休日出勤申請app」で申請済みの休日出勤のみ表示されます<br>
+            ※ <span style="color:#b45309;font-weight:700;">振替休暇は同じ月次期間（前月16日〜当月15日）で消化する必要があります</span><br>
+            ※ 既に振替元として使用した日は選択できません
           </div>
           <select id="substituteDate"><option value="">読込中...</option></select>
+          <div id="substituteDateHint" style="font-size:11px;color:var(--muted);margin-top:6px;"></div>
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
@@ -532,27 +536,49 @@ window.addEventListener('DOMContentLoaded', function() {
     });
   }
 
-  // 休日一覧ロード（振替元出勤日プルダウン用）
+  // 初期状態では振替元プルダウンは未ロード（作業員選択後にロード）
+  var sel0 = document.getElementById('substituteDate');
+  if (sel0) sel0.innerHTML = '<option value="">-- 先に作業員を選択してください --</option>';
+});
+
+// 振替元休日出勤日プルダウンをロード（指定作業員の申請済みholidayのみ）
+function loadHolidayDays(workerId) {
+  var sel = document.getElementById('substituteDate');
+  var hint = document.getElementById('substituteDateHint');
+  if (!sel) return;
+  if (!workerId) {
+    sel.innerHTML = '<option value="">-- 先に作業員を選択してください --</option>';
+    if (hint) hint.textContent = '';
+    return;
+  }
+  sel.innerHTML = '<option value="">読込中...</option>';
+  if (hint) hint.textContent = '';
   google.script.run.withSuccessHandler(function(holidays) {
-    var sel = document.getElementById('substituteDate');
-    sel.innerHTML = '<option value="">-- 休日出勤日を選択 --</option>';
     var dayNames = ['日','月','火','水','木','金','土'];
-    (holidays || []).forEach(function(h) {
+    if (!holidays || holidays.length === 0) {
+      sel.innerHTML = '<option value="">-- 申請済みの休日出勤なし --</option>';
+      if (hint) hint.textContent = '先に「残業・休日出勤申請app」で休日出勤申請を行ってください。';
+      return;
+    }
+    sel.innerHTML = '<option value="">-- 休日出勤日を選択 --</option>';
+    holidays.forEach(function(h) {
       var opt = document.createElement('option');
       opt.value = h.date;
       var dt = new Date(h.date + 'T00:00:00');
       var dow = dayNames[dt.getDay()];
-      opt.textContent = h.date + '（' + dow + '・' + h.label + '）';
+      var badge = h.status === 'approved' ? '✅承認済' : '📝申請済';
+      opt.textContent = h.date + '（' + dow + '・' + badge + '）';
       if (dt.getDay() === 0) opt.style.color = '#ff5a5f';
       if (dt.getDay() === 6) opt.style.color = '#0ea5e9';
       sel.appendChild(opt);
     });
+    if (hint) hint.textContent = holidays.length + '件の休日出勤申請が見つかりました。';
   }).withFailureHandler(function(err) {
     console.error('休日一覧取得エラー:', err);
-    var sel = document.getElementById('substituteDate');
     sel.innerHTML = '<option value="">-- 取得エラー --</option>';
-  }).api_getHolidayDays();
-});
+    if (hint) hint.textContent = 'エラー: ' + (err && err.message ? err.message : '不明');
+  }).api_getHolidayDays(workerId);
+}
 
 // ====== 部署選択 ======
 document.getElementById('deptSelect').addEventListener('change', function() {
@@ -585,6 +611,9 @@ function loadWorkers(deptId, autoSelectId) {
       var selOpt = sel.options[sel.selectedIndex];
       selectedWorkerName = selOpt ? selOpt.dataset.name || '' : '';
       document.getElementById('applyBtn').disabled = false;
+      loadHolidayDays(autoSelectId);
+    } else {
+      loadHolidayDays('');
     }
     loadLeaveTable();
   }).api_getWorkersByDept(deptId);
@@ -595,6 +624,7 @@ document.getElementById('workerSelect').addEventListener('change', function() {
   selectedWorkerId = this.value;
   selectedWorkerName = this.options[this.selectedIndex].dataset.name || '';
   document.getElementById('applyBtn').disabled = !selectedWorkerId;
+  loadHolidayDays(selectedWorkerId);
   loadLeaveTable();
 });
 
@@ -962,7 +992,13 @@ function buildConfirmation() {
     : isoToSlash_(normalVal) || normalVal;
   document.getElementById('cfmDate').textContent = displayDate;
   document.getElementById('cfmType').textContent = leaveType ? leaveType.value : '';
-  document.getElementById('cfmSubDate').textContent = document.getElementById('substituteDate').value || '-';
+  var subSel = document.getElementById('substituteDate');
+  var subText = '-';
+  if (subSel && subSel.value) {
+    var selectedOpt = subSel.options[subSel.selectedIndex];
+    subText = selectedOpt ? selectedOpt.textContent : subSel.value;
+  }
+  document.getElementById('cfmSubDate').textContent = subText;
 
   // 理由を統合表示
   var reason = '-';
