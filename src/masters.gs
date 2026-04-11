@@ -240,15 +240,18 @@ function api_getHolidayDays() {
   // 日本の祝日マップ（一般カレンダー補完用）
   var publicHolidays = getJapanesePublicHolidays_();
 
-  // 年度範囲を算出（年度初め〜今日）
+  // 年度範囲を算出（年度初め〜今日＋7日先）
+  // 未来の休日出勤（例: 今週末の土日）を振替元として選べるよう、終端を7日先まで拡張
   var today = new Date();
   var _m = today.getMonth() + 1, _d = today.getDate();
   var fy = (_m < 3 || (_m === 3 && _d < 16)) ? today.getFullYear() - 1 : today.getFullYear();
   var startDate = new Date(fy, 2, 16); // 3/16
+  var endDate = new Date(today);
+  endDate.setDate(endDate.getDate() + 7);
 
   var result = [];
   var cursor = new Date(startDate);
-  while (cursor <= today) {
+  while (cursor <= endDate) {
     var key = fmtDate_(cursor);
     var dow = cursor.getDay();
 
