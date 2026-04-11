@@ -537,7 +537,8 @@ window.addEventListener('DOMContentLoaded', function() {
         var cells = document.querySelectorAll('#retroCalGrid .retro-cal-cell.selected');
         for (var i = 0; i < cells.length; i++) cells[i].classList.remove('selected');
       }
-      // 振替元選択済みなら月次期間を再検証
+      // 休暇日が変わったら振替元プルダウンを月次期間で再フィルタ
+      renderSubstitutePulldown();
       validateSubstituteSelection();
     });
   }
@@ -620,24 +621,58 @@ function validateSubstituteSelection() {
   }
 }
 
+// 振替元プルダウン用の全候補キャッシュ（休暇日が決まり次第フィルタリング）
+var ALL_HOLIDAY_CANDIDATES = [];
+
+// 振替元プルダウンを再描画（休暇日の月次期間内の候補のみ表示）
+function renderSubstitutePulldown() {
+  var sel = document.getElementById('substituteDate');
+  if (!sel) return;
+  var prevValue = sel.value;
+  var leaveDate = getCurrentLeaveDate();
+  var period = leaveDate ? computeMonthlyPeriodJS(leaveDate) : null;
+
+  var dayNames = ['日','月','火','水','木','金','土'];
+  if (!leaveDate) {
+    sel.innerHTML = '<option value="">-- 先に休暇日を選択してください --</option>';
+    return;
+  }
+
+  var filtered = ALL_HOLIDAY_CANDIDATES.filter(function(h) {
+    return h.date >= period.start && h.date <= period.end;
+  });
+
+  if (filtered.length === 0) {
+    sel.innerHTML = '<option value="">-- 期間内(' + period.start + '〜' + period.end + ')に候補なし --</option>';
+    return;
+  }
+
+  sel.innerHTML = '<option value="">-- 休日出勤日を選択（' + period.start + '〜' + period.end + '） --</option>';
+  filtered.forEach(function(h) {
+    var opt = document.createElement('option');
+    opt.value = h.date;
+    var dt = new Date(h.date + 'T00:00:00');
+    var dow = dayNames[dt.getDay()];
+    opt.textContent = h.date + '（' + dow + '・' + h.label + '）';
+    if (dt.getDay() === 0) opt.style.color = '#ff5a5f';
+    if (dt.getDay() === 6) opt.style.color = '#0ea5e9';
+    sel.appendChild(opt);
+  });
+
+  // 前の選択値を復元（範囲内なら）
+  if (prevValue && filtered.some(function(h) { return h.date === prevValue; })) {
+    sel.value = prevValue;
+  }
+}
+
 // 振替元休日出勤日プルダウンをロード（土日・祝日を候補に、使用済みは除外）
 function loadHolidayDays(workerId) {
   var sel = document.getElementById('substituteDate');
   if (!sel) return;
   sel.innerHTML = '<option value="">読込中...</option>';
   google.script.run.withSuccessHandler(function(holidays) {
-    sel.innerHTML = '<option value="">-- 休日出勤日を選択 --</option>';
-    var dayNames = ['日','月','火','水','木','金','土'];
-    (holidays || []).forEach(function(h) {
-      var opt = document.createElement('option');
-      opt.value = h.date;
-      var dt = new Date(h.date + 'T00:00:00');
-      var dow = dayNames[dt.getDay()];
-      opt.textContent = h.date + '（' + dow + '・' + h.label + '）';
-      if (dt.getDay() === 0) opt.style.color = '#ff5a5f';
-      if (dt.getDay() === 6) opt.style.color = '#0ea5e9';
-      sel.appendChild(opt);
-    });
+    ALL_HOLIDAY_CANDIDATES = holidays || [];
+    renderSubstitutePulldown();
   }).withFailureHandler(function(err) {
     console.error('休日一覧取得エラー:', err);
     sel.innerHTML = '<option value="">-- 取得エラー --</option>';
@@ -957,7 +992,8 @@ function selectRetroDate(isoDate) {
       cells[i].classList.add('selected');
     }
   }
-  // 振替元選択済みなら月次期間を再検証
+  // 過去申請日が変わったら振替元プルダウンを再フィルタ＋再検証
+  renderSubstitutePulldown();
   validateSubstituteSelection();
 }
 
@@ -1019,7 +1055,7 @@ function nextStepFromType() {
   var type = document.querySelector('input[name="leaveType"]:checked');
   if (!type) { alert('休暇種類を選択してください'); return; }
   var typeVal = type.value;
-  if (typeVal === '振替休暇') { showStep(5); validateSubstituteSelection(); }
+  if (typeVal === '振替休暇') { showStep(5); renderSubstitutePulldown(); validateSubstituteSelection(); }
   else if (typeVal === '特別休暇') { showStep(6); }
   else if (typeVal === '有給消化（私用）') { showStep(7); }
   else { showStep(9); buildConfirmation(); }
@@ -1029,7 +1065,7 @@ function prevStepFromConfirm() {
   var type = document.querySelector('input[name="leaveType"]:checked');
   if (!type) { showStep(4); return; }
   var typeVal = type.value;
-  if (typeVal === '振替休暇') { showStep(5); validateSubstituteSelection(); }
+  if (typeVal === '振替休暇') { showStep(5); renderSubstitutePulldown(); validateSubstituteSelection(); }
   else if (typeVal === '特別休暇') { showStep(6); }
   else if (typeVal === '有給消化（私用）') { showStep(7); }
   else { showStep(4); }
