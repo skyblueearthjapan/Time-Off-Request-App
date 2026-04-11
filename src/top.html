@@ -320,11 +320,13 @@
             ※ <span style="color:#b45309;font-weight:700;">振替休暇は同じ月次期間（前月16日〜当月15日）で消化する必要があります</span><br>
             ※ 既に振替元として使用した日は選択できません
           </div>
-          <select id="substituteDate"><option value="">読込中...</option></select>
+          <select id="substituteDate" onchange="validateSubstituteSelection()"><option value="">読込中...</option></select>
+          <div id="substituteDateError" style="display:none;background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-top:8px;color:#b91c1c;font-size:12px;line-height:1.5;"></div>
+          <div id="substituteDateOk" style="display:none;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:8px 10px;margin-top:8px;color:#166534;font-size:12px;line-height:1.5;"></div>
         </div>
         <div class="step-actions">
           <button class="ghost btn-sm" onclick="prevStep(4)">戻る</button>
-          <button class="btn-sm" onclick="nextStep(9)">確認へ</button>
+          <button class="btn-sm" id="substituteNextBtn" onclick="nextStep(9)">確認へ</button>
         </div>
       </div>
 
@@ -535,12 +537,88 @@ window.addEventListener('DOMContentLoaded', function() {
         var cells = document.querySelectorAll('#retroCalGrid .retro-cal-cell.selected');
         for (var i = 0; i < cells.length; i++) cells[i].classList.remove('selected');
       }
+      // 振替元選択済みなら月次期間を再検証
+      validateSubstituteSelection();
     });
   }
 
   // 初期ロード: 土日・祝日候補を取得（作業員選択後に使用済み除外で再ロード）
   loadHolidayDays('');
 });
+
+// ====== 月次期間ヘルパ（前月16日〜当月15日） ======
+// dateStr: 'yyyy-MM-dd' → {start:'yyyy-MM-dd', end:'yyyy-MM-dd'}
+function computeMonthlyPeriodJS(dateStr) {
+  if (!dateStr) return null;
+  var parts = dateStr.split('-');
+  var y = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10) - 1; // 0-11
+  var d = parseInt(parts[2], 10);
+  var start, end;
+  if (d >= 16) {
+    start = new Date(y, m, 16);
+    end = new Date(y, m + 1, 15);
+  } else {
+    start = new Date(y, m - 1, 16);
+    end = new Date(y, m, 15);
+  }
+  function fmt(dt) {
+    var yy = dt.getFullYear();
+    var mm = ('0' + (dt.getMonth() + 1)).slice(-2);
+    var dd = ('0' + dt.getDate()).slice(-2);
+    return yy + '-' + mm + '-' + dd;
+  }
+  return { start: fmt(start), end: fmt(end), startDt: start, endDt: end };
+}
+
+// 現在選択中の休暇日を取得（通常/過去申請の両経路対応）
+function getCurrentLeaveDate() {
+  if (selectedRetroactiveLeaveDate) return selectedRetroactiveLeaveDate;
+  var el = document.getElementById('leaveDate');
+  return el ? el.value : '';
+}
+
+// 振替元選択時のリアルタイム月次期間バリデーション
+function validateSubstituteSelection() {
+  var sel = document.getElementById('substituteDate');
+  var errBox = document.getElementById('substituteDateError');
+  var okBox = document.getElementById('substituteDateOk');
+  var nextBtn = document.getElementById('substituteNextBtn');
+  if (!sel || !errBox || !okBox || !nextBtn) return;
+
+  errBox.style.display = 'none';
+  okBox.style.display = 'none';
+  nextBtn.disabled = false;
+
+  var subDate = sel.value;
+  var leaveDate = getCurrentLeaveDate();
+  if (!subDate) return;
+
+  if (!leaveDate) {
+    errBox.textContent = '先に休暇日を選択してください。';
+    errBox.style.display = '';
+    nextBtn.disabled = true;
+    return;
+  }
+
+  var lp = computeMonthlyPeriodJS(leaveDate);
+  var sp = computeMonthlyPeriodJS(subDate);
+  if (!lp || !sp) return;
+
+  if (lp.start !== sp.start) {
+    errBox.innerHTML =
+      '<strong>⚠ 月次期間違反</strong><br>' +
+      '休暇日 <strong>' + leaveDate + '</strong> は期間「' + lp.start + '〜' + lp.end + '」に属します。<br>' +
+      '振替元 <strong>' + subDate + '</strong> は期間「' + sp.start + '〜' + sp.end + '」に属します。<br>' +
+      '振替休暇は同一月次期間（前月16日〜当月15日）で消化する必要があります。';
+    errBox.style.display = '';
+    nextBtn.disabled = true;
+  } else {
+    okBox.innerHTML = '✅ 月次期間OK（' + lp.start + '〜' + lp.end + '）';
+    okBox.style.display = '';
+    nextBtn.disabled = false;
+  }
+}
 
 // 振替元休日出勤日プルダウンをロード（土日・祝日を候補に、使用済みは除外）
 function loadHolidayDays(workerId) {
@@ -715,6 +793,13 @@ function resetModal() {
   document.getElementById('substituteDate').selectedIndex = 0;
   document.getElementById('specialReason').value = '';
   document.getElementById('paidDetail').value = '';
+  // 振替元バリデーション表示をリセット
+  var errBox = document.getElementById('substituteDateError');
+  var okBox = document.getElementById('substituteDateOk');
+  var nextBtn = document.getElementById('substituteNextBtn');
+  if (errBox) errBox.style.display = 'none';
+  if (okBox) okBox.style.display = 'none';
+  if (nextBtn) nextBtn.disabled = false;
   // 過去申請カレンダーもリセット
   selectedRetroactiveLeaveDate = '';
   document.getElementById('retroSelectedInfo').textContent = '選択中: なし';
@@ -872,6 +957,8 @@ function selectRetroDate(isoDate) {
       cells[i].classList.add('selected');
     }
   }
+  // 振替元選択済みなら月次期間を再検証
+  validateSubstituteSelection();
 }
 
 function showStep(n) {
@@ -932,7 +1019,7 @@ function nextStepFromType() {
   var type = document.querySelector('input[name="leaveType"]:checked');
   if (!type) { alert('休暇種類を選択してください'); return; }
   var typeVal = type.value;
-  if (typeVal === '振替休暇') { showStep(5); }
+  if (typeVal === '振替休暇') { showStep(5); validateSubstituteSelection(); }
   else if (typeVal === '特別休暇') { showStep(6); }
   else if (typeVal === '有給消化（私用）') { showStep(7); }
   else { showStep(9); buildConfirmation(); }
@@ -942,7 +1029,7 @@ function prevStepFromConfirm() {
   var type = document.querySelector('input[name="leaveType"]:checked');
   if (!type) { showStep(4); return; }
   var typeVal = type.value;
-  if (typeVal === '振替休暇') { showStep(5); }
+  if (typeVal === '振替休暇') { showStep(5); validateSubstituteSelection(); }
   else if (typeVal === '特別休暇') { showStep(6); }
   else if (typeVal === '有給消化（私用）') { showStep(7); }
   else { showStep(4); }
