@@ -145,6 +145,10 @@
   .muted{ color:var(--muted); }
   .empty{ text-align:center; color:var(--muted); padding:20px; }
   .rowname{ font-weight:800; } .rowdept{ font-size:11px; color:var(--muted); }
+  tbody tr.rowLink{ cursor:pointer; }
+  tbody tr.rowLink:focus{ outline:2px solid var(--accent2); outline-offset:-2px; }
+  tbody tr.rowLink:focus-visible{ outline:2px solid var(--accent2); outline-offset:-2px; }
+  .goArrow{ color:var(--accent2); font-weight:900; margin-left:4px; }
   .minidots{ letter-spacing:2px; font-size:12px; } .minidots .on{ color:var(--accent); } .minidots .off{ color:var(--line); }
 
   /* 一覧KPI */
@@ -408,8 +412,8 @@
     var rows = workers.map(function(o){
       var sm = statusMap(o.warnLevel), dots = '';
       for(var i=0;i<5;i++){ dots += '<span class="'+(i<Math.floor(o.paidCount)?'on':'off')+'">●</span>'; }
-      return '<tr>'+
-        '<td><div class="rowname">'+esc(o.workerName)+'</div><div class="rowdept">'+esc(o.deptName)+'</div></td>'+
+      return '<tr class="rowLink" data-worker="'+esc(o.workerId)+'" data-dept="'+esc(o.deptName)+'" role="button" tabindex="0" title="クリックで '+esc(o.workerName)+' さんの詳細を表示">'+
+        '<td><div class="rowname">'+esc(o.workerName)+'<span class="goArrow">›</span></div><div class="rowdept">'+esc(o.deptName)+'</div></td>'+
         '<td><span class="tabnum">'+o.paidCount+' / 5</span> <span class="minidots">'+dots+'</span></td>'+
         '<td class="num tabnum">'+o.substituteCount+'</td>'+
         '<td class="num tabnum">'+o.specialCount+'</td>'+
@@ -433,7 +437,18 @@
       '<thead><tr><th>氏名 / 部署</th><th>有給（私用）</th><th class="num">振替</th><th class="num">特別</th><th class="num">合計</th><th>最終有給日</th><th>状況</th></tr></thead>'+
       '<tbody>'+rows+'</tbody>'+
     '</table></div>'+
-    '<div class="hint" style="margin-top:12px">💡 状況が悪い順に並べています。氏名を上のプルダウンで指定すると、その人の達成状況タイムラインが開きます。</div>';
+    '<div class="hint" style="margin-top:12px">💡 状況が悪い順に並べています。<b>各行をクリック</b>すると、その人の達成状況タイムライン（詳細）が開きます（上のプルダウンでも切替可）。</div>';
+  }
+
+  // 一覧の行クリック → その人の詳細ビューへ（部署/スタッフの絞り込みも自動で切替）
+  function goToPerson(dept, worker){
+    if(!worker) return;
+    state.dept = dept || '';
+    state.staff = worker;
+    deptSel.value = state.dept;   // 部署プルダウンを同期（全部署→その人の部署に切替）
+    fillStaff();                  // スタッフ候補を再取得し、その人を選択状態に
+    render();                     // 詳細（本人）ビューを表示
+    document.getElementById('body').scrollIntoView({ behavior:'smooth', block:'start' });
   }
 
   // ===== イベント配線 =====
@@ -441,6 +456,18 @@
   document.getElementById('nextY').addEventListener('click', function(){ if(state.fy < CUR_FY){ state.fy++; render(); } });
   deptSel.addEventListener('change', function(){ state.dept = deptSel.value; state.staff = ''; fillStaff(); render(); });
   staffSel.addEventListener('change', function(){ state.staff = staffSel.value; render(); });
+
+  // 一覧行のクリック／キーボード操作（body は再描画されるため委譲でハンドル）
+  var bodyEl = document.getElementById('body');
+  bodyEl.addEventListener('click', function(ev){
+    var tr = ev.target && ev.target.closest ? ev.target.closest('tr.rowLink') : null;
+    if(tr) goToPerson(tr.getAttribute('data-dept'), tr.getAttribute('data-worker'));
+  });
+  bodyEl.addEventListener('keydown', function(ev){
+    if(ev.key !== 'Enter' && ev.key !== ' ') return;
+    var tr = ev.target && ev.target.closest ? ev.target.closest('tr.rowLink') : null;
+    if(tr){ ev.preventDefault(); goToPerson(tr.getAttribute('data-dept'), tr.getAttribute('data-worker')); }
+  });
 
   // ===== 初期化：ログイン本人を初期選択（本人ビューで開く） =====
   function init(){
