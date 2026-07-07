@@ -70,6 +70,14 @@ function doGet(e) {
       return saTpl.evaluate().setTitle('休暇届 総務管理')
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 
+    case 'leaveStatus':
+      var lsTpl = HtmlService.createTemplateFromFile('leaveStatus');
+      lsTpl.APP_URL = appUrl;
+      lsTpl.PORTAL_URL = portalUrl;
+      return lsTpl.evaluate()
+        .setTitle('休暇届 取得状況')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+
     default: // 'top'
       var topTpl = HtmlService.createTemplateFromFile('top');
       topTpl.APP_URL = appUrl;

@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<base target="_top">
+<title>休暇届 取得状況</title>
+<style>
+  /* === 休暇届アプリ 既存 :root を継承（ライト固定） === */
+  :root{
+    --bg1:#eaf6ff; --bg2:#f7fffb;
+    --accent:#1f9d55; --accent2:#0ea5e9;
+    --text:#0b2545; --muted:#5c6b7a;
+    --card:#ffffffcc; --cardSolid:#ffffff; --line:#d7e7f5;
+    --danger:#ff5a5f; --warn:#ffb020;
+    --ok-bg:#f0fff6; --ok-bd:#bfe9d0; --ok-tx:#0b5a2b;
+    --warn-bg:#fff6eb; --warn-bd:#ffd29e; --warn-tx:#7a4a0b;
+    --info-bg:#f0f7ff; --info-bd:#b3d4ff; --info-tx:#0b2a5a;
+    --danger-bg:#fff0f0; --danger-bd:#ffb3b3; --danger-tx:#7a0b0b;
+    --track:#e7f0f8;
+    --shadow:0 10px 30px rgba(10,40,80,.06);
+  }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    color:var(--text);
+    font-family: system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+    background:
+      radial-gradient(1100px 600px at 18% 0%, var(--bg1), transparent),
+      radial-gradient(1100px 600px at 92% 20%, var(--bg2), transparent),
+      linear-gradient(180deg,#ffffff,#f3fbff);
+    background-attachment: fixed; min-height:100vh;
+  }
+  .wrap{ max-width:1040px; margin:0 auto; padding:18px 16px 60px; }
+  .tabnum{ font-variant-numeric: tabular-nums; }
+
+  header.app{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .logo{ width:40px; height:40px; border-radius:12px; flex:none; display:grid; place-items:center; color:#fff; font-weight:900;
+    background:linear-gradient(135deg, var(--accent), #1bd67f); box-shadow:var(--shadow); }
+  .brand h1{ font-size:18px; margin:0; letter-spacing:.02em; }
+  .brand .sub{ font-size:12px; color:var(--muted); margin-top:2px; }
+  .whoami{ font-size:13px; color:var(--muted); text-align:right; }
+  .whoami .who{ font-weight:800; color:var(--text); }
+  .backlink{ display:inline-block; margin-top:4px; font-size:12px; color:var(--accent2); text-decoration:none; font-weight:700; }
+  .backlink:hover{ text-decoration:underline; }
+
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px;
+    box-shadow:var(--shadow); margin-bottom:16px; }
+  .sectionTitle{ font-weight:900; letter-spacing:.04em; display:flex; align-items:center; justify-content:space-between;
+    gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .sectionTitle .lead{ display:flex; align-items:center; gap:10px; }
+  .dot{ width:10px; height:10px; border-radius:3px; background:var(--accent); }
+  .section-count{ font-size:13px; font-weight:800; color:var(--accent2); }
+
+  .pill{ padding:3px 10px; border-radius:999px; font-size:12px; font-weight:700; border:1px solid var(--line);
+    background:var(--cardSolid); display:inline-block; }
+  .pill.ok{ border-color:var(--ok-bd); background:var(--ok-bg); color:var(--ok-tx); }
+  .pill.warn{ border-color:var(--warn-bd); background:var(--warn-bg); color:var(--warn-tx); }
+  .pill.info{ border-color:var(--info-bd); background:var(--info-bg); color:var(--info-tx); }
+  .pill.danger{ border-color:var(--danger-bd); background:var(--danger-bg); color:var(--danger-tx); }
+
+  /* === 検索バー（左端は「年度」） === */
+  .filters{ display:grid; gap:12px; grid-template-columns:auto 1fr 1fr; align-items:end; }
+  .field{ display:flex; flex-direction:column; gap:6px; }
+  .field label{ font-size:11px; font-weight:800; letter-spacing:.06em; color:var(--muted); text-transform:uppercase; }
+  select{ appearance:none; -webkit-appearance:none; padding:10px 34px 10px 12px; border-radius:12px; border:1px solid var(--line);
+    background:var(--cardSolid) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235c6b7a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 10px center;
+    color:var(--text); font-size:14px; font-weight:700; cursor:pointer; width:100%; }
+  .yearNav{ display:flex; align-items:stretch; gap:8px; }
+  .yearNav .navbtn{ width:40px; border-radius:12px; border:1px solid var(--line); background:var(--cardSolid);
+    color:var(--text); font-size:18px; font-weight:900; cursor:pointer; }
+  .yearNav .navbtn:hover{ border-color:var(--accent2); color:var(--accent2); }
+  .yearNav .navbtn:disabled{ opacity:.35; cursor:not-allowed; }
+  .yearBox{ min-width:190px; text-align:center; border:1px solid var(--line); border-radius:12px; background:var(--cardSolid);
+    padding:6px 12px; display:flex; flex-direction:column; justify-content:center; }
+  .yearBox .m{ font-size:16px; font-weight:900; }
+  .yearBox .p{ font-size:11px; color:var(--muted); margin-top:1px; }
+  .hint{ font-size:12px; color:var(--muted); margin-top:10px; display:flex; gap:6px; align-items:center; }
+
+  /* 本人/対象者ヘッダー */
+  .meHead{ display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .avatar{ width:46px; height:46px; border-radius:50%; flex:none; display:grid; place-items:center; font-weight:900; color:#fff;
+    background:linear-gradient(135deg,#38bdf8,var(--accent2)); }
+  .meHead .nm{ font-size:17px; font-weight:900; }
+  .meHead .dp{ font-size:12px; color:var(--muted); }
+
+  .kpiGrid{ display:grid; gap:12px; grid-template-columns:1.4fr 1fr 1fr 1fr; }
+  .kpi{ border:1px solid var(--line); border-radius:14px; padding:14px; background:var(--cardSolid); position:relative; overflow:hidden; }
+  .kpi .rail{ position:absolute; left:0; top:0; bottom:0; width:5px; }
+  .kpi.paid .rail{ background:var(--accent); }
+  .kpi.sub .rail{ background:var(--accent2); }
+  .kpi.spec .rail{ background:#a855f7; }
+  .kpi.tot .rail{ background:var(--muted); }
+  .kpi .k-label{ font-size:12px; font-weight:800; color:var(--muted); }
+  .kpi .k-val{ font-size:26px; font-weight:900; margin-top:6px; line-height:1.05; }
+  .kpi .k-val .slash{ font-size:15px; color:var(--muted); font-weight:800; }
+  .kpi .k-sub{ font-size:11px; color:var(--muted); margin-top:4px; }
+  .kpi.paid{ background:linear-gradient(135deg, rgba(31,157,85,.10), rgba(14,165,233,.06)); }
+  .dots{ letter-spacing:3px; font-size:15px; margin-top:6px; }
+  .dots .on{ color:var(--accent); } .dots .off{ color:var(--line); }
+
+  /* 義務タイムライン */
+  .obl{ margin-top:16px; border:1px solid var(--line); border-radius:14px; padding:16px 16px 8px; background:var(--cardSolid); }
+  .obl .o-top{ display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+  .obl .o-top .ttl{ font-size:13px; font-weight:900; }
+  .obl .o-top .note{ font-size:12px; color:var(--muted); }
+  .timeline{ position:relative; height:96px; margin:8px 4px 0; }
+  .baseline{ position:absolute; left:0; right:0; top:30px; height:6px; border-radius:999px; background:var(--track); }
+  .elapsed{ position:absolute; left:0; top:30px; height:6px; border-radius:999px; background:linear-gradient(90deg,#cfeadd,#e9f7ef); }
+  .today{ position:absolute; top:8px; height:52px; width:2px; background:var(--danger); transform:translateX(-50%); }
+  .today .lab{ position:absolute; top:-16px; left:50%; transform:translateX(-50%); font-size:10px; font-weight:800; color:var(--danger); white-space:nowrap; }
+  .node{ position:absolute; top:18px; transform:translateX(-50%); text-align:center; width:64px; }
+  .node .circle{ width:30px; height:30px; border-radius:50%; margin:0 auto; display:grid; place-items:center;
+    font-weight:900; font-size:13px; border:2px solid var(--line); background:var(--cardSolid); color:var(--muted); }
+  .node.done .circle{ background:var(--accent); border-color:var(--accent); color:#fff; }
+  .node.note .circle{ background:var(--info-bg); border-color:var(--info-bd); color:var(--info-tx); }
+  .node.warn .circle{ background:var(--warn-bg); border-color:var(--warn-bd); color:var(--warn-tx); }
+  .node.risk .circle{ background:var(--danger); border-color:var(--danger); color:#fff; }
+  .node .date{ font-size:10px; color:var(--muted); margin-top:4px; font-weight:700; }
+  .node .st{ font-size:10px; font-weight:800; margin-top:2px; }
+  .node.done .st{ color:var(--ok-tx); } .node.future .st{ color:var(--muted); }
+  .node.note .st{ color:var(--info-tx); } .node.warn .st{ color:var(--warn-tx); } .node.risk .st{ color:var(--danger-tx); }
+  .o-legend{ display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--muted); margin-top:6px; padding-top:10px; border-top:1px dashed var(--line); }
+  .o-legend .sw{ display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
+  .sw.green{ background:var(--accent); } .sw.grey{ background:var(--line); } .sw.amber{ background:var(--warn); } .sw.red{ background:var(--danger); }
+
+  .callout{ margin-top:14px; border-radius:12px; padding:12px 14px; font-size:13px; font-weight:700; display:flex; gap:10px; align-items:center; }
+  .callout.ok{ background:var(--ok-bg); border:1px solid var(--ok-bd); color:var(--ok-tx); }
+  .callout.info{ background:var(--info-bg); border:1px solid var(--info-bd); color:var(--info-tx); }
+  .callout.warn{ background:var(--warn-bg); border:1px solid var(--warn-bd); color:var(--warn-tx); }
+  .callout.danger{ background:var(--danger-bg); border:1px solid var(--danger-bd); color:var(--danger-tx); }
+  .callout .ic{ font-size:18px; }
+
+  .tableWrap{ overflow-x:auto; margin-top:6px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; min-width:520px; }
+  th,td{ border-bottom:1px solid var(--line); padding:10px 10px; text-align:left; white-space:nowrap; }
+  th{ font-size:11px; color:var(--muted); font-weight:800; letter-spacing:.04em; }
+  td.num, th.num{ text-align:right; font-variant-numeric:tabular-nums; }
+  tbody tr:hover{ background:color-mix(in srgb, var(--accent2) 6%, transparent); }
+  .kindChip{ font-size:11px; font-weight:800; padding:3px 9px; border-radius:8px; display:inline-block; border:1px solid var(--line); }
+  .kindChip.paid{ color:var(--ok-tx); background:var(--ok-bg); border-color:var(--ok-bd); }
+  .kindChip.sub{ color:var(--info-tx); background:var(--info-bg); border-color:var(--info-bd); }
+  .kindChip.spec{ color:#6b21a8; background:#faf5ff; border-color:#e9d5ff; }
+  .muted{ color:var(--muted); }
+  .empty{ text-align:center; color:var(--muted); padding:20px; }
+  .rowname{ font-weight:800; } .rowdept{ font-size:11px; color:var(--muted); }
+  .minidots{ letter-spacing:2px; font-size:12px; } .minidots .on{ color:var(--accent); } .minidots .off{ color:var(--line); }
+
+  /* 一覧KPI */
+  .listKpi{ display:grid; gap:10px; grid-template-columns:repeat(4,1fr); margin-bottom:14px; }
+  .lk{ border:1px solid var(--line); border-radius:14px; padding:12px; background:var(--cardSolid); text-align:center; }
+  .lk .v{ font-size:22px; font-weight:900; } .lk .v.danger{ color:var(--danger); } .lk .v.warn{ color:#c98209; }
+  .lk .l{ font-size:11px; color:var(--muted); font-weight:800; margin-top:2px; }
+
+  .fade{ animation:fade .25s ease both; }
+  @keyframes fade{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  @media (prefers-reduced-motion: reduce){ .fade{ animation:none; } }
+
+  @media (max-width:820px){ .filters{ grid-template-columns:1fr; } .kpiGrid{ grid-template-columns:1fr 1fr; }
+    .listKpi{ grid-template-columns:1fr 1fr; } .twoCol{ grid-template-columns:1fr !important; } }
+  @media (max-width:520px){ .kpiGrid{ grid-template-columns:1fr; } .node{ width:52px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="app">
+    <div class="brand">
+      <div class="logo">休</div>
+      <div>
+        <h1>休暇届 取得状況</h1>
+        <div class="sub">スタッフビュー画面（社内）</div>
+      </div>
+    </div>
+    <div class="whoami">
+      <div>ログイン：<span class="who" id="whoName">…</span></div>
+      <a class="backlink" href="<?= APP_URL ?>?page=top">← 申請TOPへ戻る</a>
+    </div>
+  </header>
+
+  <!-- ===== 検索カード（左端は年度） ===== -->
+  <section class="card">
+    <div class="sectionTitle">
+      <div class="lead"><span class="dot"></span><span>休暇取得状況の検索</span></div>
+      <div class="section-count" id="periodLabel">3/16 〜 翌3/15</div>
+    </div>
+    <div class="filters">
+      <div class="field">
+        <label>対象年度</label>
+        <div class="yearNav">
+          <button class="navbtn" id="prevY" type="button" aria-label="前の年度">‹</button>
+          <div class="yearBox">
+            <div class="m" id="yearM">—</div>
+            <div class="p" id="yearP">3/16 〜 翌3/15（年間）</div>
+          </div>
+          <button class="navbtn" id="nextY" type="button" aria-label="次の年度">›</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>部署</label>
+        <select id="deptSel"></select>
+      </div>
+      <div class="field">
+        <label>スタッフ</label>
+        <select id="staffSel"></select>
+      </div>
+    </div>
+    <div class="hint">🔎 どの部署・どのスタッフでも検索できます。スタッフ「全員」を選ぶと部署の一覧表示になります。</div>
+  </section>
+
+  <!-- ===== 結果（本人ビュー / 一覧ビュー切替） ===== -->
+  <section class="card"><div id="body"><div class="empty">読み込み中...</div></div></section>
+
+</div>
+
+<script>
+  // ===== 定数 =====
+  // タイムラインのノード横位置（年度内のおおよその日付位置：6/30,8/31,12/31,2/15,3/15）
+  var NODE_POS = [29.0, 46.0, 79.5, 92.0, 100.0];
+
+  // 3/16始まりの年度をクライアント側でも算出（サーバの computeFiscalYear_ と一致）
+  function computeFyJs(d){
+    d = d || new Date();
+    var y = d.getFullYear(), m = d.getMonth()+1, day = d.getDate();
+    return (m < 3 || (m === 3 && day < 16)) ? y-1 : y;
+  }
+  var CUR_FY = computeFyJs();
+  var FY_MIN = CUR_FY - 5;               // 過去5年度まで遡れる
+  var state = { fy: CUR_FY, dept: '', staff: '' };
+
+  // 今日の位置（%）：当年度3/16からの経過日数 / 365。過去年度は100%扱い（呼び出し側で判定）
+  function todayPct(fy){
+    var start = new Date(fy, 2, 16); // 3/16（月index=2）
+    var now = new Date();
+    var pct = (now - start) / (365*24*3600*1000) * 100;
+    return Math.max(0, Math.min(100, pct));
+  }
+
+  function statusMap(wl){
+    if(wl === '危険') return {cls:'danger', label:'危険'};
+    if(wl === '警告') return {cls:'warn',   label:'警告'};
+    if(wl === '注意') return {cls:'info',   label:'注意'};
+    return {cls:'ok', label:'順調'};
+  }
+  function stRank(wl){ return wl==='危険'?3:(wl==='警告'?2:(wl==='注意'?1:0)); }
+  function kindClass(t){ t = t || ''; return t.indexOf('有給')===0 ? 'paid' : (t.indexOf('振替')===0 ? 'sub' : 'spec'); }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function dashIfEmpty(s){ return (s==null || s==='') ? '—' : esc(s); }
+
+  // ===== セレクタ =====
+  var deptSel = document.getElementById('deptSel');
+  var staffSel = document.getElementById('staffSel');
+
+  function fillDept(){
+    google.script.run
+      .withSuccessHandler(function(list){
+        list = list || [];
+        deptSel.innerHTML = '<option value="">全部署</option>' +
+          list.map(function(d){ return '<option value="'+esc(d.deptId)+'">'+esc(d.deptName)+'</option>'; }).join('');
+        deptSel.value = state.dept;
+      })
+      .withFailureHandler(function(){ deptSel.innerHTML = '<option value="">全部署</option>'; })
+      .api_getDeptList();
+  }
+
+  function fillStaff(){
+    if(!state.dept){ // 全部署のときはスタッフ指定不可（全員のみ）
+      staffSel.innerHTML = '<option value="">全員</option>';
+      staffSel.value = '';
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(function(list){
+        list = list || [];
+        staffSel.innerHTML = '<option value="">全員</option>' +
+          list.map(function(w){ return '<option value="'+esc(w.workerId)+'">'+esc(w.workerName)+'</option>'; }).join('');
+        // 選択中スタッフが新しい部署に存在しなければ全員に戻す
+        if(!list.some(function(w){ return w.workerId === state.staff; })) state.staff = '';
+        staffSel.value = state.staff;
+      })
+      .withFailureHandler(function(){ staffSel.innerHTML = '<option value="">全員</option>'; })
+      .api_getWorkersByDept(state.dept);
+  }
+
+  function setYearUI(){
+    document.getElementById('yearM').textContent = state.fy + '年度';
+    document.getElementById('yearP').textContent = '3/16 〜 翌3/15（年間）';
+    document.getElementById('periodLabel').textContent = state.fy + '年度（3/16〜翌3/15）';
+    document.getElementById('prevY').disabled = (state.fy <= FY_MIN);
+    document.getElementById('nextY').disabled = (state.fy >= CUR_FY);
+  }
+
+  // ===== メインの検索・描画 =====
+  function render(){
+    setYearUI();
+    var body = document.getElementById('body');
+    body.classList.remove('fade'); void body.offsetWidth; body.classList.add('fade');
+    body.innerHTML = '<div class="empty">読み込み中...</div>';
+    google.script.run
+      .withSuccessHandler(function(res){
+        if(!res){ body.innerHTML = '<div class="empty">データがありません</div>'; return; }
+        if(res.mode === 'personal') body.innerHTML = renderPersonal(res);
+        else body.innerHTML = renderList(res);
+      })
+      .withFailureHandler(function(err){
+        body.innerHTML = '<div class="empty">読み込みに失敗しました：' + esc(err && err.message || err) + '</div>';
+      })
+      .api_getLeaveStatusSearch(state.fy, state.dept, state.staff);
+  }
+
+  function renderPersonal(res){
+    var w = res.worker;
+    var isCur = (res.fyYear === CUR_FY);
+    if(!w){
+      return '<div class="empty">選択したスタッフの' + res.fyYear + '年度データが見つかりませんでした。</div>';
+    }
+    var sm = statusMap(w.warnLevel);
+    var count = w.paidCount, rest = Math.max(0, 5 - count);
+    var halfNote = (w.paidHalfCount > 0) ? ('うち半休 ' + w.paidHalfCount + '回') : '半休なし';
+
+    var dots = '';
+    for(var i=0;i<5;i++){ dots += '<span class="'+(i<Math.floor(count)?'on':'off')+'">●</span>'; }
+
+    var ms = res.milestones || [];
+    var asOf = isCur ? todayPct(res.fyYear) : 100;
+    var nodes = ms.map(function(m, i){
+      var tag = m.met ? '達成' : (m.state==='future' ? '残'+m.remaining : '不足'+m.deficit);
+      return '<div class="node '+m.state+'" style="left:'+NODE_POS[i]+'%">'+
+             '<div class="circle">'+m.required+'</div>'+
+             '<div class="date">'+esc(m.dateText)+'</div>'+
+             '<div class="st">'+tag+'</div></div>';
+    }).join('');
+    var todayEl = isCur ? '<div class="today" style="left:'+asOf+'%"><span class="lab">今日</span></div>' : '';
+
+    // 次アクション コールアウト
+    var passedUnmet = ms.filter(function(m){ return m.passed && !m.met; });
+    var nextFuture  = ms.filter(function(m){ return !m.passed; })[0];
+    var callout='', cclass='ok', cic='✓';
+    if(passedUnmet.length){
+      var pw = passedUnmet[passedUnmet.length-1], def = pw.deficit;
+      cclass = def>=3?'danger':(def>=2?'warn':'info'); cic = def>=2?'⚠':'！';
+      callout = esc(pw.dateText)+' 期限の必要回数に <b>'+def+'回</b> 足りていません。早めに有給（私用）を取得してください。';
+    } else if(nextFuture){
+      var need = nextFuture.remaining;
+      if(need===0){ cclass='ok'; cic='✓'; callout='次の期限 '+esc(nextFuture.dateText)+'（'+nextFuture.required+'回）は達成済み。年度末の 5回 に向けて計画的に取得しましょう。'; }
+      else { cclass='info'; cic='🗓'; callout='次の期限 <b>'+esc(nextFuture.dateText)+'</b> までに <b>'+nextFuture.required+'回</b>（あと <b>'+need+'回</b>）。計画的に取得しましょう。'; }
+    } else {
+      cic = count>=5?'🎉':'✓'; cclass = count>=5?'ok':sm.cls;
+      callout = count>=5 ? '年度の取得義務 5回を達成しています。' : '年度が終了しました。';
+    }
+
+    // 今後の休暇予定（当年度のみ・実データ）
+    var up = res.upcoming || [];
+    var upRows = isCur
+      ? (up.length ? up.map(function(u){
+          var kubun = esc(u.leaveKubun) + (u.halfDayType ? '（'+esc(u.halfDayType)+'）' : '');
+          var stCell = (u.status==='承認済') ? '<span class="pill ok">承認済</span>' : '<span class="pill warn">'+esc(u.status||'申請中')+'</span>';
+          return '<tr><td class="tabnum">'+esc(u.leaveDate)+'</td><td>'+kubun+'</td><td><span class="kindChip '+kindClass(u.leaveType)+'">'+esc(u.leaveType)+'</span></td><td>'+stCell+'</td></tr>';
+        }).join('') : '<tr><td colspan="4" class="empty">今後の休暇予定はありません</td></tr>')
+      : '<tr><td colspan="4" class="empty">過去年度のため予定はありません</td></tr>';
+
+    // 当年度の取得内訳（実データの回数ベース。※個別日付の履歴は現状APIが返さないため回数で表示）
+    var brk = [
+      {type:'有給消化（私用）', n:w.paidCount, note:'最終取得日 '+dashIfEmpty(w.lastPaidDate)},
+      {type:'振替休暇',        n:w.substituteCount, note:''},
+      {type:'特別休暇',        n:w.specialCount, note:''}
+    ];
+    var brkRows = brk.map(function(b){
+      return '<tr><td><span class="kindChip '+kindClass(b.type)+'">'+esc(b.type)+'</span></td><td class="num tabnum">'+b.n+'</td><td class="muted">'+b.note+'</td></tr>';
+    }).join('');
+
+    var total = w.totalCount, initial = (w.workerName||'？').trim().charAt(0);
+    return ''+
+    '<div class="meHead"><div class="avatar">'+esc(initial)+'</div><div><div class="nm">'+esc(w.workerName)+'</div><div class="dp">'+esc(w.deptName)+'　/　'+res.fyYear+'年度（3/16〜翌3/15）</div></div><div style="flex:1"></div><span class="pill '+sm.cls+'">有給義務：'+sm.label+'</span></div>'+
+    '<div class="kpiGrid">'+
+      '<div class="kpi paid"><span class="rail"></span><div class="k-label">有給消化（私用）</div><div class="k-val tabnum">'+count+'<span class="slash"> / 5回</span></div><div class="dots">'+dots+'</div><div class="k-sub">年度目標5回・残 '+rest+'回 ／ '+halfNote+'</div></div>'+
+      '<div class="kpi sub"><span class="rail"></span><div class="k-label">振替休暇</div><div class="k-val tabnum">'+w.substituteCount+'<span class="slash"> 回</span></div><div class="k-sub">前月16〜当月15の期間内</div></div>'+
+      '<div class="kpi spec"><span class="rail"></span><div class="k-label">特別休暇</div><div class="k-val tabnum">'+w.specialCount+'<span class="slash"> 回</span></div><div class="k-sub">結婚・忌引 等</div></div>'+
+      '<div class="kpi tot"><span class="rail"></span><div class="k-label">合計取得</div><div class="k-val tabnum">'+total+'<span class="slash"> 回</span></div><div class="k-sub">最終有給日 '+dashIfEmpty(w.lastPaidDate)+'</div></div>'+
+    '</div>'+
+    '<div class="obl"><div class="o-top"><span class="ttl">有給取得義務の達成状況（年度内の期限）</span><span class="note">数字＝その期限までに必要な累計回数</span></div>'+
+      '<div class="timeline"><div class="baseline"></div><div class="elapsed" style="width:'+asOf+'%"></div>'+nodes+todayEl+'</div>'+
+      '<div class="o-legend"><span><i class="sw green"></i>達成</span><span><i class="sw grey"></i>これから（残N）</span><span><i class="sw amber"></i>期限超過・注意/警告</span><span><i class="sw red"></i>期限超過・危険</span></div>'+
+    '</div>'+
+    '<div class="callout '+cclass+'"><span class="ic">'+cic+'</span><span>'+callout+'</span></div>'+
+    '<div class="twoCol" style="display:grid; gap:16px; grid-template-columns:1fr 1fr; margin-top:18px;">'+
+      '<div><div class="sectionTitle" style="margin-bottom:6px"><div class="lead"><span>今後の休暇予定</span></div></div><div class="tableWrap"><table><thead><tr><th>日付</th><th>区分</th><th>種類</th><th>状態</th></tr></thead><tbody>'+upRows+'</tbody></table></div></div>'+
+      '<div><div class="sectionTitle" style="margin-bottom:6px"><div class="lead"><span>'+res.fyYear+'年度の取得内訳</span></div></div><div class="tableWrap"><table><thead><tr><th>種類</th><th class="num">回数</th><th>備考</th></tr></thead><tbody>'+brkRows+'</tbody></table></div></div>'+
+    '</div>';
+  }
+
+  function renderList(res){
+    var workers = (res.workers || []).slice();
+    // 状況が悪い順（severity降順）→ 有給回数昇順
+    workers.sort(function(a, b){
+      return (stRank(b.warnLevel) - stRank(a.warnLevel)) || (a.paidCount - b.paidCount);
+    });
+
+    var n = workers.length, warnCnt = 0, dangerCnt = 0, sum = 0;
+    workers.forEach(function(o){
+      if(o.warnLevel !== '') warnCnt++;
+      if(o.warnLevel === '危険') dangerCnt++;
+      sum += o.paidCount;
+    });
+    var avg = n ? (Math.round(sum/n*10)/10) : 0;
+
+    var rows = workers.map(function(o){
+      var sm = statusMap(o.warnLevel), dots = '';
+      for(var i=0;i<5;i++){ dots += '<span class="'+(i<Math.floor(o.paidCount)?'on':'off')+'">●</span>'; }
+      return '<tr>'+
+        '<td><div class="rowname">'+esc(o.workerName)+'</div><div class="rowdept">'+esc(o.deptName)+'</div></td>'+
+        '<td><span class="tabnum">'+o.paidCount+' / 5</span> <span class="minidots">'+dots+'</span></td>'+
+        '<td class="num tabnum">'+o.substituteCount+'</td>'+
+        '<td class="num tabnum">'+o.specialCount+'</td>'+
+        '<td class="num tabnum">'+o.totalCount+'</td>'+
+        '<td class="tabnum">'+dashIfEmpty(o.lastPaidDate)+'</td>'+
+        '<td><span class="pill '+sm.cls+'">'+sm.label+'</span></td>'+
+      '</tr>';
+    }).join('');
+    if(!rows) rows = '<tr><td colspan="7" class="empty">対象のスタッフがいません</td></tr>';
+
+    var scope = res.deptFilter ? res.deptFilter : '全部署';
+    return ''+
+    '<div class="listKpi">'+
+      '<div class="lk"><div class="v tabnum">'+n+'</div><div class="l">対象者</div></div>'+
+      '<div class="lk"><div class="v warn tabnum">'+warnCnt+'</div><div class="l">有給 未達（注意以上）</div></div>'+
+      '<div class="lk"><div class="v danger tabnum">'+dangerCnt+'</div><div class="l">危険レベル</div></div>'+
+      '<div class="lk"><div class="v tabnum">'+avg+'</div><div class="l">平均取得回数</div></div>'+
+    '</div>'+
+    '<div class="sectionTitle" style="margin-bottom:8px"><div class="lead"><span>有給取得状況 一覧 — '+esc(scope)+'</span></div><div class="section-count">'+n+'名 ・ '+res.fyYear+'年度</div></div>'+
+    '<div class="tableWrap"><table>'+
+      '<thead><tr><th>氏名 / 部署</th><th>有給（私用）</th><th class="num">振替</th><th class="num">特別</th><th class="num">合計</th><th>最終有給日</th><th>状況</th></tr></thead>'+
+      '<tbody>'+rows+'</tbody>'+
+    '</table></div>'+
+    '<div class="hint" style="margin-top:12px">💡 状況が悪い順に並べています。氏名を上のプルダウンで指定すると、その人の達成状況タイムラインが開きます。</div>';
+  }
+
+  // ===== イベント配線 =====
+  document.getElementById('prevY').addEventListener('click', function(){ if(state.fy > FY_MIN){ state.fy--; render(); } });
+  document.getElementById('nextY').addEventListener('click', function(){ if(state.fy < CUR_FY){ state.fy++; render(); } });
+  deptSel.addEventListener('change', function(){ state.dept = deptSel.value; state.staff = ''; fillStaff(); render(); });
+  staffSel.addEventListener('change', function(){ state.staff = staffSel.value; render(); });
+
+  // ===== 初期化：ログイン本人を初期選択（本人ビューで開く） =====
+  function init(){
+    setYearUI();
+    google.script.run
+      .withSuccessHandler(function(me){
+        if(me && me.workerName){ document.getElementById('whoName').textContent = me.workerName + (me.deptName ? '（'+me.deptName+'）' : ''); }
+        else { document.getElementById('whoName').textContent = '—'; }
+        if(me && me.deptId){ state.dept = me.deptId; state.staff = me.workerId; }
+        fillDept();
+        fillStaff();
+        render();
+      })
+      .withFailureHandler(function(){
+        document.getElementById('whoName').textContent = '—';
+        fillDept();
+        fillStaff();
+        render();
+      })
+      .api_getWorkerInfo();
+  }
+  init();
+</script>
+</body>
+</html>
