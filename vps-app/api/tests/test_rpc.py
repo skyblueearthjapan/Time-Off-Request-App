@@ -83,8 +83,10 @@ def test_register_twice_is_error():
         rpc.register("api_getDeptList", lambda ctx: None)
 
 
-def test_load_domain_handlers_without_register_module():
-    assert rpc.load_domain_handlers() == []
+def test_load_domain_handlers_registers_whole_closed_list():
+    # W の app/domain/register.py が入った後は、閉じたリストの全部に中身が登録される
+    loaded = rpc.load_domain_handlers()
+    assert sorted(loaded) == sorted(rpc.RPC_FUNCTIONS)
 
 
 def test_load_domain_handlers_calls_register_all(monkeypatch):
