@@ -39,7 +39,7 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
-from app import jobs, models, safety, sheet_queue, timeutil
+from app import jobs, models, safety, sheet_queue, store, timeutil
 from app.jobs import JobContext, PermanentJobError, RetryLater, SkipJob
 
 log = logging.getLogger(__name__)
@@ -256,11 +256,6 @@ def _clear_sign_png(db: Session, req: models.LeaveRequest) -> None:
         req.sign_png = None
 
 
-def _lock(db: Session, req_id: str) -> models.LeaveRequest | None:
-    L = models.LeaveRequest
-    return db.scalars(select(L).where(L.req_id == req_id).with_for_update()).first()
-
-
 def record_gas_result(db: Session, req_id: str, resp: dict) -> None:
     """GAS の返事の G 列を DB に入れる（同じトランザクション。commit しない。10-2）。
 
@@ -272,7 +267,7 @@ def record_gas_result(db: Session, req_id: str, resp: dict) -> None:
     """
     if not isinstance(resp, Mapping) or not req_id:
         return
-    req = _lock(db, req_id)
+    req = store.lock_request(db, req_id)
     if req is None:
         return
     sign = resp.get("sign")

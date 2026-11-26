@@ -630,6 +630,65 @@ def test_production_gate_follows_migrated(session_factory, db, clock, gas, setti
     assert write_gate.check(db, prod, clock.at) == (True, "")
 
 
+# ===== 本物の GasClient を通した本文の形（G の src/Internal.gs と同じキー） =====
+
+
+def test_wire_body_matches_internal_gs(session_factory, db, clock, settings):
+    import re
+
+    import httpx
+
+    from app.services.gas_client import GasClient
+
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            sent.append(json.loads(request.content))
+            return httpx.Response(302, headers={"location": "https://script.googleusercontent.com/macros/echo?x=1"})
+        body = sent[-1]
+        reply = {"ok": True, "action": body["action"], "jobId": body["jobId"], "reqId": body["reqId"],
+                 "sign": {"status": "cleared", "signImageUrl": ""}, "trash": {"status": "skipped"},
+                 "ledger": {"status": "removed", "sheetName": "2026年度"}, "reason": "edit"}
+        return httpx.Response(200, headers={"content-type": "application/json"}, content=json.dumps(reply).encode())
+
+    client = GasClient(settings.gas_internal_url, settings.gas_internal_token, settings=settings,
+                       auth_mode="anonymous",
+                       http_factory=lambda **kw: httpx.Client(transport=httpx.MockTransport(handler), **kw))
+    previous = gas_jobs.set_client_factory(lambda s: client)
+    try:
+        gas_jobs.register_worker()
+        ping_ok(db)
+        add_request(db, "LV-20261126-003", status="申請中", approved_at=None, sign_image_url="https://s/1")
+        gas_jobs.enqueue_after_unapprove(db, "LV-20261126-003", reason="edit", old_leave_date="2026-11-27",
+                                         old_pdf_url="", old_pdf_file_id="", clear_sign=True)
+        db.commit()
+        assert run(session_factory, clock)["done"] == 1
+    finally:
+        gas_jobs.set_client_factory(previous)
+    body = sent[0]
+    assert body["internal"] is True and body["action"] == "internal.afterUnapprove"
+    assert body["reqId"] == "LV-20261126-003" and "requestId" not in body
+    assert re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", body["jobId"])
+    assert body["expect"] == {"status": "申請中"}
+    assert set(body["args"]) == {"reason", "oldLeaveDate", "clearSign", "oldPdfUrl", "oldPdfFileId", "cleanupMode"}
+    assert req(db, "LV-20261126-003").sign_image_url == ""
+
+
+def test_pdf_failure_from_gas_is_retried_and_ledger_kept(session_factory, db, clock, gas):
+    ping_ok(db)
+    add_request(db, "LV-20261126-002", approved_at2=APPROVED_AT2, pdf_url="u-old", pdf_file_id="f-old")
+    gas.replies["internal.afterApprove2"] = {"ok": False, "error": "internal", "message": "pdf: boom",
+                                             "retryable": True, "failedStage": "pdf",
+                                             "pdf": {"status": "error", "error": "boom"},
+                                             "trash": {"status": "skipped"}, "ledger": {"status": "upserted"}}
+    job_id = gas_jobs.enqueue_after_approve2(db, "LV-20261126-002")
+    db.commit()
+    assert run(session_factory, clock)["retry"] == 1
+    assert json.loads(job(db, job_id).result_json)["failedStage"] == "pdf"
+    assert req(db, "LV-20261126-002").pdf_url == "u-old"
+
+
 # ===== 登録 =====
 
 

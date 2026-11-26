@@ -62,7 +62,7 @@ def _row_sync(db: Session, now: datetime) -> dict:
 
 
 def _job_row(j: dict) -> dict:
-    return {"id": j["id"], "requestId": j["requestId"], "action": j["kind"], "reason": j["error"],
+    return {"id": j["id"], "reqId": j["reqId"], "action": j["kind"], "reason": j["error"],
             "attempts": j["attempts"], "state": j["state"], "createdAt": _t(j["createdAt"]),
             "runAfter": _t(j["runAfter"])}
 
@@ -70,7 +70,7 @@ def _job_row(j: dict) -> dict:
 def _gas_jobs(db: Session) -> dict:
     J = models.Job
     waiting = [
-        {"id": r.id, "requestId": r.request_id, "action": r.kind, "reason": r.last_error, "attempts": r.attempts,
+        {"id": r.id, "reqId": r.request_id, "action": r.kind, "reason": r.last_error, "attempts": r.attempts,
          "runAfter": _t(r.run_after)}
         for r in db.scalars(select(J).where(J.lane == "gas", J.state == "pending", J.last_error != "")
                             .order_by(J.id).limit(100))
