@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>休暇届 総務管理</title>
+  <style>
+    :root{--bg1:#eaf6ff;--bg2:#f7fffb;--accent:#1f9d55;--accent2:#0ea5e9;--text:#0b2545;--muted:#5c6b7a;--card:#ffffffcc;--line:#d7e7f5;--danger:#ff5a5f;--warn:#ffb020;}
+    *{box-sizing:border-box;}
+    body{
+      margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      color:var(--text);
+      background:radial-gradient(1100px 600px at 18% 0%,var(--bg1),transparent),
+        radial-gradient(1100px 600px at 92% 20%,var(--bg2),transparent),
+        linear-gradient(180deg,#ffffff,#f3fbff);
+    }
+    header{
+      padding:18px 22px;display:flex;align-items:flex-end;justify-content:space-between;
+      border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+      position:sticky;top:0;background:rgba(255,255,255,.55);z-index:10;
+    }
+    .title{font-weight:900;letter-spacing:.06em;font-size:18px;}
+    .sub{opacity:.8;font-size:12px;color:var(--muted);}
+    .wrap{padding:18px 22px;max-width:1200px;margin:0 auto;}
+    .card{
+      background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:14px 18px;box-shadow:0 10px 30px rgba(10,40,80,.06);margin-bottom:14px;
+    }
+    .card-accent{border-left:4px solid var(--accent2);}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    button{
+      padding:10px 16px;border-radius:12px;border:0;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:800;cursor:pointer;font-size:14px;
+      box-shadow:0 10px 22px rgba(31,157,85,.20);
+    }
+    button:disabled{opacity:.5;cursor:not-allowed;}
+    .btn-blue{background:linear-gradient(135deg,var(--accent2),#38bdf8);box-shadow:0 10px 22px rgba(14,165,233,.20);}
+    .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
+    .ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;}
+    .pill{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#fff;display:inline-block;}
+    .danger{border-color:#ffb3b3;background:#fff0f0;color:#7a0b0b;}
+    .warn{border-color:#ffd29e;background:#fff6eb;color:#7a4a0b;}
+    .ok{border-color:#bfe9d0;background:#f0fff6;color:#0b5a2b;}
+    .info{border-color:#b3d4ff;background:#f0f7ff;color:#0b2a5a;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;}
+    th{font-size:12px;color:var(--muted);}
+    tr.warn-row{background:#fff8ee;}
+    tr.danger-row{background:#fff0f0;}
+    a{color:var(--accent2);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    .nav-link{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--text);}
+    .nav-link:hover{background:var(--bg1);text-decoration:none;}
+    .portal-link{
+      font-size:13px;padding:6px 14px;border-radius:8px;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:700;text-decoration:none;
+    }
+    .portal-link:hover{opacity:.9;text-decoration:none;}
+    .loading{text-align:center;padding:30px;color:var(--muted);}
+    select{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-size:14px;font-weight:700;min-width:160px;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+    .kpi-card{
+      background:var(--card);border:1px solid var(--line);border-radius:14px;
+      padding:14px;text-align:center;
+    }
+    .kpi-label{font-size:12px;color:var(--muted);margin-bottom:4px;}
+    .kpi-value{font-size:24px;font-weight:900;}
+    .kpi-value.danger{color:var(--danger);}
+    .kpi-value.warn{color:var(--warn);}
+    .table-scroll{overflow-x:auto;}
+    input[type="checkbox"]{width:16px;height:16px;cursor:pointer;}
+    .batch-bar{display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#f1f5f9;border-radius:10px;}
+    .batch-bar .count{font-size:13px;font-weight:700;color:var(--muted);}
+    /* 承認者選択ドロップダウン */
+    .approver2-select{padding:8px 14px;border-radius:10px;border:1px solid var(--line);font-size:14px;min-width:200px;}
+    @media(max-width:640px){
+      header{flex-direction:column;align-items:flex-start;gap:8px;}
+      .wrap{padding:12px 10px;}
+      .kpi-grid{grid-template-columns:1fr 1fr;}
+      table{font-size:12px;}
+      th,td{padding:8px 4px;}
+      select{min-width:auto;width:100%;}
+    }
+  </style>
+<link rel="stylesheet" href="/static/css/mobile.css">
+</head>
+<body data-page="somuAdmin">
+  <header>
+    <div>
+      <div class="title">総務管理ダッシュボード</div>
+      <div class="sub">全社 有給取得義務管理 + 2次承認</div>
+    </div>
+    <div class="row">
+      <a href="{{ APP_URL }}?page=top" target="_top" class="nav-link">申請TOP</a>
+      <a href="{{ APP_URL }}?page=deptAdmin" target="_top" class="nav-link" id="navDept" style="display:none;">部署管理</a>
+      <a href="{{ PORTAL_URL }}" target="_top" class="portal-link" id="portalLink" style="display:none;">社内ポータルへ移動</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- ====== 2次承認セクション ====== -->
+    <div class="card card-accent">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">
+        2次承認待ち一覧
+        <span class="pill info" id="pending2Count">読込中...</span>
+      </div>
+
+      <!-- 2次承認者表示 -->
+      <div style="margin-bottom:10px;">
+        <label style="font-weight:700;font-size:13px;">2次承認者：</label>
+        <span id="approver2Name" style="font-size:13px;">読込中...</span>
+      </div>
+
+      <!-- 一括操作バー -->
+      <div class="batch-bar" id="batchBar" style="display:none;">
+        <input type="checkbox" id="selectAll" data-on-change="toggleSelectAll">
+        <span class="count" id="selectedCount">0件選択中</span>
+        <button class="btn-sm btn-blue" id="batchApproveBtn" data-on-click="batchApprove2" disabled>一括2次承認</button>
+      </div>
+
+      <div class="table-scroll">
+        <div id="approval2Wrap"><div class="loading">読込中...</div></div>
+      </div>
+    </div>
+
+    <!-- ====== 有給管理セクション ====== -->
+    <div class="card" style="padding:12px 16px;">
+      <div class="row">
+        <div>
+          <label style="font-weight:700;font-size:13px;">年度：</label>
+          <select id="fySelect"></select>
+        </div>
+        <div>
+          <label style="font-weight:700;font-size:13px;">部署：</label>
+          <select id="deptFilter"><option value="ALL">全部署</option></select>
+        </div>
+        <button class="btn-sm btn-blue" data-on-click="loadData">更新</button>
+        <button class="btn-sm ghost" data-on-click="exportCsv">CSVエクスポート</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card"><div class="kpi-label">対象者数</div><div class="kpi-value" id="kpiTotal">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">有給未達者</div><div class="kpi-value danger" id="kpiWarn">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">危険レベル</div><div class="kpi-value danger" id="kpiDanger">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均有給回数</div><div class="kpi-value" id="kpiAvg">-</div></div>
+    </div>
+
+    <div class="card">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">有給取得義務 管理一覧</div>
+      <div class="table-scroll" id="tableWrap"><div class="loading">読込中...</div></div>
+    </div>
+{% if SHOW_OPS %}
+    <!-- 運用（管理者）: VPS 版で足した欄（仕様 3-11）。運用者のときだけ出す。閉じたままなら今の画面と同じ見た目 -->
+    <details class="card" id="opsPanel">
+      <summary style="cursor:pointer; font-weight:900;">運用（管理者）</summary>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn-sm ghost" data-on-click="opsLoadStatus">状態を更新</button>
+        <button class="btn-sm ghost" data-on-click="opsRun" data-args='["ops_syncSheetConfigNow","$this"]'>設定タブを今すぐ取り込む</button>
+        <button class="btn-sm ghost" data-on-click="opsRun" data-args='["ops_runMasterSync","$this"]'>マスタ同期</button>
+        <button class="btn-sm ghost" data-on-click="opsRun" data-args='["ops_rebuildSummaryNow","$this"]'>集計タブを今すぐ書き直す</button>
+        <button class="btn-sm ghost" data-on-click="opsRun" data-args='["ops_sendWarnMail","$this"]'>有給警告メールを送る</button>
+        <a href="/auth/google-delegate/start" target="_top" class="nav-link">委任の許可をやり直す</a>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <div class="sub">メール</div>
+          <input id="opsRevokeEmail" placeholder="name@lineworks-local.info">
+        </div>
+        <button class="btn-sm ghost" data-on-click="opsRunWithInput" data-args='["ops_revokeSessions","opsRevokeEmail","$this"]'>セッションの取り消し</button>
+      </div>
+      <div id="opsFailed" style="margin-top:12px;"></div>
+      <pre id="opsStatus" style="margin-top:12px; white-space:pre-wrap; word-break:break-all; font-size:12px; background:#f7fbff; border:1px solid var(--line); border-radius:12px; padding:10px; max-height:420px; overflow:auto;">（開くと読み込みます）</pre>
+    </details>
+{% endif %}
+  </div>
+
+<script type="application/json" id="gas-template-data">{{ data_json|safe }}</script>
+<script src="/static/js/gas-shim.js"></script>
+<script src="/static/js/somuAdmin.js"></script>
+</body>
+</html>
