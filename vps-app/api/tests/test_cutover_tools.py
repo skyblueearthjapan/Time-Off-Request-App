@@ -41,7 +41,8 @@ def test_backup_copies_only_allowed_sources(settings):
     http = cutover_backup.Http(lambda: "tok", transport=drive_transport(seen))
     report = cutover_backup.run(http, settings)
     assert report["ok"] and [b["sourceId"] for b in report["backups"]] == ["staging-db-sheet-id", "staging-ledger-id"]
-    assert all(b["name"].startswith("【切替前の控え】休暇届 ") for b in report["backups"])
+    assert [b["name"].rsplit(" ", 2)[0] for b in report["backups"]] == ["【切替前の控え】[staging] 休暇届 DB",
+                                                                       "【切替前の控え】[staging] 休暇届 台帳"]
     copies = [u for m, u in seen if m == "POST"]
     assert len(copies) == 2 and not any(i in u for u in copies for i in _config.PRODUCTION_IDS)
     with pytest.raises(cutover_backup.BackupStop):
@@ -65,7 +66,7 @@ def books(settings):
     from d_sheet_fixtures import add_db_book
 
     add_db_book(fake, COPY_ID)
-    fake.books[COPY_ID].title = "【切替前の控え】休暇届 DB 2026-11-26 1830"
+    fake.books[COPY_ID].title = "【切替前の控え】[staging] 休暇届 DB 2026-11-26 1830"
     return fake
 
 
@@ -113,6 +114,44 @@ def test_refuses_non_backup_or_target_itself(books, settings):
         restore.run(books.api(settings), settings, COPY_ID, "all", apply=False)
     with pytest.raises(restore.RestoreStop):
         restore.run(books.api(settings), settings, STAGING_SID, "all", apply=False)
+
+
+@pytest.mark.parametrize("title", ["【切替前の控え】[production] 休暇届 DB 2026-11-26 1830",
+                                   "【切替前の控え】休暇届 DB 2026-11-26 1830",  # 環境の無い旧い名前
+                                   "【切替前の控え】[staging] 休暇届 台帳 2026-11-26 1830"])
+def test_refuses_backup_of_other_env_or_without_env(books, settings, title):
+    books.books[COPY_ID].title = title
+    with pytest.raises(restore.RestoreStop, match="控えの"):
+        restore.run(books.api(settings), settings, COPY_ID, "all", apply=False)
+    assert books.writes() == []
+
+
+def test_backup_name_has_env_and_restore_checks_it():
+    name = cutover_backup.backup_name("production", "DB", "2026-11-26 1830")
+    assert name == "【切替前の控え】[production] 休暇届 DB 2026-11-26 1830"
+    restore.check_backup_title("【切替前の控え】[production] 休暇届 DB 2026-11-26 1830", "production")
+    with pytest.raises(restore.RestoreStop, match="環境（staging）"):
+        restore.check_backup_title("【切替前の控え】[staging] 休暇届 DB 2026-11-26 1830", "production")
+
+
+def _prod():
+    return make_settings(app_env="production", staging_spreadsheet_id="", staging_pdf_folder_id="",
+                         staging_ledger_spreadsheet_id="",
+                         gas_internal_url=f"https://script.google.com/macros/s/{PROD_DEPLOY}/exec",
+                         prod_gas_internal_deployment_id=PROD_DEPLOY)
+
+
+@pytest.mark.parametrize("staging_id", sorted(_config.KNOWN_STAGING_IDS))
+def test_production_restore_refuses_staging_resource_ids(staging_id):
+    # 台帳・PDF・GAS の ID は前から never_writable_ids でも止まる。DB の写し・GAS のデプロイはこの決まりで止まる
+    with pytest.raises(restore.RestoreStop, match="使えません"):
+        restore.run(object(), _prod(), staging_id, "all", apply=False)
+
+
+def test_production_backup_refuses_staging_sources(monkeypatch):
+    monkeypatch.setattr(_config, "KNOWN_STAGING_IDS", frozenset({_config.PROD_LEDGER_SPREADSHEET_ID_FIXED}))
+    with pytest.raises(cutover_backup.BackupStop, match="ステージング"):
+        cutover_backup.allowed_sources(_prod())
 
 
 def test_whole_tab_restore_clears_rest(books, settings):

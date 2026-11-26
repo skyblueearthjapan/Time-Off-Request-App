@@ -10,6 +10,8 @@
   - 書くのは「複製を作る」だけ。元のファイルは変えない。複製はマイドライブの直下に置き、共有しない。
   - 複製の後、タブごとの A 列の行数を元と複製で比べる（違えばその冊は NG）。
   - 出すのは ID・名前・行数だけ（セルの中身・トークンは出さない）。
+  - 控えの名前に環境を入れる（「【切替前の控え】[production] 休暇届 DB 2026-11-26 1830」の形）。戻しの道具は、
+    名前の環境が今の APP_ENV と同じ控えだけを使う。本番はステージングの資源（config の STAGING_*_KNOWN）を元にしない。
   - 委任トークン（DELEGATE_EMAIL。drive の許可が要る）を使う。
 終了コード: 0＝すべて OK、1＝行数が合わない冊がある、2＝止めた（許可リスト外・API の失敗）。
 """
@@ -30,7 +32,7 @@ from app import timeutil  # noqa: E402
 
 DRIVE_API = "https://www.googleapis.com/drive/v3/files"
 SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
-BACKUP_PREFIX = "【切替前の控え】休暇届"
+BACKUP_PREFIX = "【切替前の控え】"
 
 
 class BackupStop(RuntimeError):
@@ -48,7 +50,14 @@ def allowed_sources(settings: Any) -> list[tuple[str, str]]:
     pairs = [("DB", _config.PROD_SPREADSHEET_ID_FIXED), ("台帳", _config.PROD_LEDGER_SPREADSHEET_ID_FIXED)]
     if settings.prod_spreadsheet_id != pairs[0][1] or settings.prod_ledger_spreadsheet_id != pairs[1][1]:
         raise BackupStop("本番の DB・台帳の ID が定数と違います")
+    if any(fid in _config.KNOWN_STAGING_IDS for _, fid in pairs):
+        raise BackupStop("本番の複製の元がステージングの ID です")
     return pairs
+
+
+def backup_name(app_env: str, label: str, stamp: str) -> str:
+    """控えの名前（環境を入れる。戻しの道具が照合する）。"""
+    return f"{BACKUP_PREFIX}[{app_env}] 休暇届 {label} {stamp}"
 
 
 def check_source(file_id: str, settings: Any) -> None:
@@ -102,7 +111,7 @@ def run(http: Http, settings: Any, *, now: Optional[datetime] = None) -> dict:
     for label, fid in allowed_sources(settings):
         check_source(fid, settings)
         before = tab_row_counts(http, fid)
-        copied = copy_file(http, fid, f"{BACKUP_PREFIX} {label} {stamp}", settings)
+        copied = copy_file(http, fid, backup_name(settings.app_env, label, stamp), settings)
         after = tab_row_counts(http, copied["id"])
         tabs = {t: {"source": n, "copy": after.get(t), "ok": after.get(t) == n} for t, n in before.items()}
         ok = bool(tabs) and all(v["ok"] for v in tabs.values())

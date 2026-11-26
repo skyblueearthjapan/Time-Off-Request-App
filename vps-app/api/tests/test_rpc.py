@@ -251,7 +251,8 @@ def test_missing_origin_requires_same_origin_fetch_403(logged_in):
     assert logged_in.post("/api/rpc/api_getDeptList", json=[], headers={"origin": ORIGIN}).status_code == 200
 
 
-@pytest.mark.parametrize("depth", [33, 2000, 20_000])  # 2000 段から json の再帰の上限を超える（本文は 256 KB 以内）
+# 33・2000 段は読めるが深すぎる（_too_deep）。20000 段は json の読み込みが RecursionError（本文は 256 KB 以内）
+@pytest.mark.parametrize("depth", [33, 2000, 20_000])
 def test_deeply_nested_json_is_400_not_500(logged_in, depth):
     """[[[[…]]]] の深い入れ子は、json の再帰の上限（RecursionError）でも 500 にせず形の誤り（400）。"""
     rpc.register("api_getDeptList", lambda ctx, *a: "ok")
