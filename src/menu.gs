@@ -1,6 +1,8 @@
 // ====== エントリポイント（休暇届申請システム） ======
 
 function doGet(e) {
+  var cutoverPage = cutoverDoGetGuard_(e);
+  if (cutoverPage) return cutoverPage;
   var page = (e && e.parameter && e.parameter.page) ? e.parameter.page : 'top';
   var settings = getSettings_();
   var appUrl = normalize_(settings['APP_URL'] || '');
@@ -95,6 +97,7 @@ function include_(filename) {
 // ====== スプレッドシートメニュー ======
 
 function onOpen() {
+  if (addMigratedMenuIfMigrated_()) return;
   SpreadsheetApp.getUi()
     .createMenu('休暇届アプリ')
     .addItem('初期セットアップ（シート自動生成）', 'setupAllSheets')
@@ -115,6 +118,7 @@ function onOpen() {
 // ====== 初期セットアップ（全シート自動生成） ======
 
 function setupAllSheets() {
+  assertNotMigrated_();
   var ss = SpreadsheetApp.getActive();
   var created = [];
   var skipped = [];
@@ -343,6 +347,7 @@ function formatHeaderRow_(sh) {
 // ====== トリガー設定 ======
 
 function setupAllTriggers() {
+  assertNotMigrated_();
   setupSyncTrigger_();
   // メール送信は統合メール通知システムに移行済み
   // setupWarnMailTrigger_();
@@ -354,6 +359,7 @@ function setupAllTriggers() {
  * T_LEAVE_REQUESTに不足ヘッダ列を自動追加（マイグレーション）
  */
 function migrateLeaveRequestHeaders_() {
+  assertNotMigrated_();
   var sh = requireSheet_(SHEET.LEAVE_REQUEST);
   var lastCol = sh.getLastColumn();
   if (lastCol < 1) return;
@@ -379,6 +385,7 @@ function migrateLeaveRequestHeaders_() {
 }
 
 function setupSyncTrigger_() {
+  assertNotMigrated_();
   var triggers = ScriptApp.getProjectTriggers();
   if (triggers.some(function(t) { return t.getHandlerFunction() === 'syncAllMasters'; })) return;
   ScriptApp.newTrigger('syncAllMasters')
@@ -390,6 +397,7 @@ function setupSyncTrigger_() {
 }
 
 function setupWarnMailTrigger_() {
+  assertNotMigrated_();
   var triggers = ScriptApp.getProjectTriggers();
   if (triggers.some(function(t) { return t.getHandlerFunction() === 'checkAndSendWarnMails_'; })) return;
   ScriptApp.newTrigger('checkAndSendWarnMails_')
@@ -402,6 +410,7 @@ function setupWarnMailTrigger_() {
 
 /** 通知メールトリガー（3種） */
 function setupNotifyTriggers_() {
+  assertNotMigrated_();
   var triggers = ScriptApp.getProjectTriggers();
   var funcs = triggers.map(function(t) { return t.getHandlerFunction(); });
 

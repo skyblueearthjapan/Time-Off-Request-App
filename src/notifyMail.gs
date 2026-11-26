@@ -43,6 +43,7 @@ function getDeptApproverEmailsForDept_(deptName) {
  * 該当部署の1次承認者 + 総務にメール送信
  */
 function notifyPendingApproval1_() {
+  if (skipBecauseMigrated_('notifyPendingApproval1_')) return;
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var idx = info.idx;
@@ -139,6 +140,7 @@ function notifyPendingApproval1_() {
  * 総務部にメール送信
  */
 function notifyPendingApproval2_() {
+  if (skipBecauseMigrated_('notifyPendingApproval2_')) return;
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var idx = info.idx;
@@ -233,6 +235,7 @@ function notifyPendingApproval2_() {
  * 本日が休暇日の承認済み申請を総務にメール送信
  */
 function notifyTodayLeaves_() {
+  if (skipBecauseMigrated_('notifyTodayLeaves_')) return;
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var idx = info.idx;

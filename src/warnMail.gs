@@ -2,6 +2,7 @@
 
 /** メニューから呼べる公開ラッパー（日付チェックをスキップして強制送信） */
 function checkAndSendWarnMails() {
+  assertNotMigrated_();
   checkAndSendWarnMails_();
 }
 
@@ -9,6 +10,7 @@ function checkAndSendWarnMails() {
  * 毎日08:00に実行。当日がWARN_MAIL_DATESに該当すれば警告メール送信。
  */
 function checkAndSendWarnMails_() {
+  if (skipBecauseMigrated_('checkAndSendWarnMails_')) return;
   var now = new Date();
   var month = now.getMonth() + 1; // 1-12
   var day = now.getDate();
