@@ -144,3 +144,15 @@
 - **第 1 案で通る: `GAS_INTERNAL_AUTH=bearer`**。委任のアクセストークンを `Authorization: Bearer` に付けて `/exec` へ POST → 302 → `script.googleusercontent.com` で 200 の JSON（`internal.ping` が `ok:true`、scriptId・シート・PDF フォルダ・台帳がステージングの値、`auth: bearer`、2〜5 秒）。トークンを付けないと 401 の HTML。本文の token が違うと `unauthorized`。マニフェストを匿名に変える第 2 案は使わない。
 - ping の `spreadsheetTimeZone` は空（シートが GMT のため。罠 68 のとおり）。時間帯は Sheets API の値（`Etc/GMT`）を正とする。
 - 注意: `clasp create --parentId` は指定を無視して新しい空のスプレッドシートを作った（すぐゴミ箱へ）。既にあるシートにスクリプトを付けるときは Apps Script API の `projects.create`（`parentId`）を使う。
+
+## 8. 受け入れの結果と追加の決定（2026-11-26 昼）
+
+- レビュー 2 本（正しさ・安全）: 致命的・高は実害なし。指摘は R1（VPS 側 14 項目）・R2（GAS 側 7 項目）で直した。本番 DB の編集者は持ち主だけ（Drive の permissions を読んで確認）。
+- ステージング: 本番データの写し 279 件（承認済 261・取消 18）、`sheet_reconcile --check` は行の差 0。集計タブの差は 1 人分（写しを取った後に本番で承認された 1 件の分）。PostgreSQL＋ICU 72.1 の全試験 923 件合格。受け入れの道具 115 項目すべて合格。
+- JEV ハンズで実機（Edge）: ログイン・TOP・申請・プレビュー・手書きサインで 1 次承認・総務管理で 2 次承認・PDF（31.5 秒）・取得状況・取消。PDF は本番のものと配置・印が同じ。
+
+| # | 項目 | 決定（オーナー） |
+|---|---|---|
+| K-12 | PDF の承認日 | **西暦 `yyyy/MM/dd`（例 2026/11/26）**。今の本番は令和の「8/11/26」をシートが日付と読み替えて「2008/11/26」と出ていた。`pdfExport.gs` の 2 か所を `pdfApprovalDateText_`（文字の形式のセルに書く）に変えた（ブランチ `gas-cutover`。今の本番の PDF から変わる唯一の点） |
+| K-13 | 画面の「最終有給日」 | **`yyyy-MM-dd`**（`quirks.LAST_PAID_DATE_STYLE='iso'`）。今は `String(Date)` の長い英語の日付 |
+| K-14 | 切り替えの時刻 | K-8（夜）を改め、**準備が済みしだい当日に行う**。始める直前に声をかける。17:00・18:00 の統合業務メールの時刻と進行中の件数を先に確かめる |

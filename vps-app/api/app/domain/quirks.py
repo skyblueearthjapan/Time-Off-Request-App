@@ -13,7 +13,7 @@ PDF_CLEANUP_MODE = "asis"
 #         0 時の日付のセルに変える）を GAS が Date で読み、String(Date) にした長い英語の形
 #         （GMT のシートで 'Fri Nov 27 2026 09:00:00 GMT+0900 (Japan Standard Time)'）。
 # 'iso'（'ymd' も同じ）= 'yyyy-MM-dd' のまま。
-LAST_PAID_DATE_STYLE = "gas"
+LAST_PAID_DATE_STYLE = "iso"
 
 # Q2（ディレクター判断で直す）: 2 次承認者のメールは引数ではなくログイン中のメールを使う。False なら今の GAS と同じく引数。
 SECOND_APPROVER_FROM_LOGIN = True

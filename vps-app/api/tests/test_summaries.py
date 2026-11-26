@@ -70,4 +70,5 @@ def test_last_paid_date_display():
         "Thu Mar 05 2026 00:00:00 GMT+0900 (Japan Standard Time)"
     assert summaries.last_paid_date_display("2026-11-27", "iso") == "2026-11-27"
     assert summaries.last_paid_date_display("", "gas") == ""
-    assert summaries.last_paid_date_display("2026-11-27") == "Fri Nov 27 2026 09:00:00 GMT+0900 (Japan Standard Time)"
+    # 既定は iso（2026-11-26 オーナーの決定: 最終有給日は yyyy-MM-dd で出す）
+    assert summaries.last_paid_date_display("2026-11-27") == "2026-11-27"
