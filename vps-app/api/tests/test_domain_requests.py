@@ -248,3 +248,20 @@ def test_delete(db, rec):
     with pytest.raises(RpcError, match="^申請が見つかりません。$"):
         requests.api_deleteLeaveRequest(ctx(db), "LV-9")
     assert requests.api_deleteLeaveRequest(ctx(db), "LV-3") == {"ok": True}  # 却下も取消できる
+
+
+# ===== 入力の形（JS の \d・$ と同じ: 半角の数字だけ、末尾の改行を許さない） =====
+
+
+def test_input_patterns_match_js_semantics():
+    from app.domain import calendar, fiscal, jsdate
+    from app.services import sheet_codec
+
+    for pattern in (requests.YMD, fiscal._YMD, jsdate.YMD_RE):
+        assert pattern.match("2026-11-27")
+        for bad in ("2026-11-27\n", "２０２６-11-27", "2026-11-2٧", "2026-11-27 "):
+            assert not pattern.match(bad), (pattern.pattern, bad)
+    assert calendar._YM_DASH.match("2026-11") and not calendar._YM_DASH.match("2026-11\n")
+    assert calendar._YM_PLAIN.match("202611") and not calendar._YM_PLAIN.match("２０２６11")
+    assert sheet_codec.REQ_ID_RE.match("LV-20261126-1000") and not sheet_codec.REQ_ID_RE.match("LV-20261126-001\n")
+    assert not sheet_codec.NUMBER_TEXT_RE.match("１２")

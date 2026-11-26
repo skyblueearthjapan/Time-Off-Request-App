@@ -178,8 +178,9 @@ def holiday_days(db: Session, today: date, worker_id: Any = None) -> list[dict]:
     return result
 
 
-_YM_DASH = re.compile(r"^\d{4}-\d{2}$")
-_YM_PLAIN = re.compile(r"^\d{6}$")
+# JS の \d・$ と同じ（Python の \d は全角などの数字も含み、$ は末尾の改行の前でも合う）
+_YM_DASH = re.compile(r"^[0-9]{4}-[0-9]{2}\Z")
+_YM_PLAIN = re.compile(r"^[0-9]{6}\Z")
 
 
 def past_working_days(db: Session, today: date, year_month: Any = None) -> list[dict]:

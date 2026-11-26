@@ -33,7 +33,7 @@ from . import adapters, calendar, quirks, store
 from .fiscal import days_ago, fiscal_year, is_retroactive, is_within_current_fy, monthly_period
 from .jsdate import js_new_date, js_truthy, jst_ymd_date
 
-YMD = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+YMD = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")  # JS の /^\d{4}-\d{2}-\d{2}$/ と同じ（半角の数字だけ、改行を許さない）
 LOCK_REQ_ID = 739410001
 LOCK_SUBSTITUTE = 739410002
 
@@ -67,7 +67,7 @@ def generate_req_id(db: Session, now) -> str:
     prefix = "LV-" + timeutil.to_jst_text(now, "yyyyMMdd") + "-"
     max_seq = 0
     for rid in db.scalars(select(LeaveRequest.req_id).where(LeaveRequest.req_id.startswith(prefix, autoescape=True))):
-        m = re.match(r"^\s*([+-]?\d+)", rid[len(prefix):])  # parseInt(…, 10)。数字で始まらなければ数えない
+        m = re.match(r"^\s*([+-]?[0-9]+)", rid[len(prefix):])  # parseInt(…, 10)。数字で始まらなければ数えない
         if m:
             max_seq = max(max_seq, int(m.group(1)))
     return prefix + str(max_seq + 1).zfill(3)

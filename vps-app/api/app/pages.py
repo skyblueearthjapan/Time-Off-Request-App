@@ -44,19 +44,20 @@ NO_AUTH = {
     "somuAdmin": ("アクセス権限なし", "このページは総務部・管理者のみアクセスできます。"),
 }
 
-_REQ_ID_RE = re.compile(r"LV-[0-9]{8}-[0-9]{3}")
+# 連番は 3 桁以上（その日に 1000 件を超えれば 4 桁になる）。JS の \d・$ と同じく半角の数字だけ・末尾の改行なし
+_REQ_ID_RE = re.compile(r"^LV-[0-9]{8}-[0-9]{3,}\Z")
 _FULLWIDTH_ALNUM = re.compile(r"[Ａ-Ｚａ-ｚ０-９]")
 _NO_STORE = {"Cache-Control": "no-store"}
 
 
 def validate_req_id(value: str | None) -> str:
-    """`?reqId=` は `LV-yyyyMMdd-NNN` の形のときだけその文字。ほかは ''。
+    """`?reqId=` は `LV-yyyyMMdd-NNN`（連番 3 桁以上）の形のときだけその文字。ほかは ''。
 
     仕様 3-2 は「形を確かめない」だが、sign は REQ_ID を承認後の innerHTML のリンクに入れるので、
     形の違う値は入れない（本番の 279 件はすべてこの形）。形の違う値は「REQ_IDが指定されていません。」になる。
     """
     text = value or ""
-    return text if _REQ_ID_RE.fullmatch(text) else ""
+    return text if _REQ_ID_RE.match(text) else ""
 
 
 def normalize(value: Any) -> str:
@@ -88,8 +89,12 @@ def _app_url(settings: Settings) -> str:
 
 
 def _portal_url(db: Session) -> str:
-    """Settings（DB に取り込んだ M_SYSTEM_SETTING）の PORTAL_URL。空ならボタンを出さない（画面の JS が決める）。"""
-    return normalize(permissions.settings_map(db).get("PORTAL_URL", ""))
+    """Settings（DB に取り込んだ M_SYSTEM_SETTING）の PORTAL_URL。空ならボタンを出さない（画面の JS が決める）。
+
+    https:// で始まる値だけ使う（javascript: などをリンクにしない）。違えば空＝ボタンを出さない。
+    """
+    url = normalize(permissions.settings_map(db).get("PORTAL_URL", ""))
+    return url if url.startswith("https://") else ""
 
 
 def _allowed(page: str, db: Session, email: str) -> bool:
