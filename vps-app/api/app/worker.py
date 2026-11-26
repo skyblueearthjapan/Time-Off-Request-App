@@ -44,13 +44,13 @@ GAS_LANE_ADVISORY_LOCK = 739_310_001  # pg_try_advisory_lock の鍵（GAS のレ
 
 # 担当 D・M が register_worker() を置くモジュール（無いものは飛ばす）:
 #   row_sync（T_LEAVE_REQUEST の行の反映）・reconcile（毎晩の照合）・config_sync（M_SYSTEM_SETTING・M_LOOKUP の取り込み）・
-#   master_sync（マスタ 4 つの同期）・summary_sync（V_LEAVE_SUMMARY の書き直し）＝D、gas_jobs・ops_status＝M
+#   master_sync（マスタ 4 つの同期）・summary_sheet（V_LEAVE_SUMMARY の書き直し）＝D、gas_jobs・ops_status＝M
 REGISTRATION_MODULES: tuple[str, ...] = (
     "app.services.row_sync",
     "app.services.reconcile",
     "app.services.config_sync",
     "app.services.master_sync",
-    "app.services.summary_sync",
+    "app.services.summary_sheet",
     "app.services.gas_jobs",
     "app.services.ops_status",
 )

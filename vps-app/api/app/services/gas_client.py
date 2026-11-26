@@ -1,13 +1,13 @@
 """GAS の内部用の入口を呼ぶ。担当 F の土台。担当 M（services/gas_jobs.py）が使う。
 
-本文: {"internal": true, "token": GAS_INTERNAL_TOKEN, "action": "internal.<名前>", "jobId": "<uuid>",
-       "requestId": "...", "expect": {...}, "args": {...}}
+本文（仕様書 7-1）: {"internal": true, "token": GAS_INTERNAL_TOKEN, "action": "internal.<名前>", "jobId": "<uuid>",
+       "reqId": "LV-...", "expect": {...}, "args": {...}}
 返事: いつも HTTP 200 の JSON（成功 {"ok": true, ...}、失敗 {"ok": false, "error": "<コード>", "retryable": ...}）。
 
 このアプリの GAS の Web アプリは access: DOMAIN（ドメインの利用者だけ）。GAS_INTERNAL_AUTH で呼び方を選ぶ:
-- delegate_bearer（既定）: 最初の POST（script.google.com）にだけ `Authorization: Bearer <委任のアクセストークン>`
+- bearer（第 1 案・既定）: 最初の POST（script.google.com）にだけ `Authorization: Bearer <委任のアクセストークン>`
   （google_delegate.get_access_token）を付ける。
-- none: 本文の token だけ。
+- anonymous（第 2 案）: 本文の token だけ（内部用のデプロイだけ ANYONE_ANONYMOUS の版）。
 
 GAS の /exec への POST は 302 で script.googleusercontent.com へ送られ、そこを GET で読むと JSON が返る。
 転送は自分で追う（httpx の自動追従は使わない）:
@@ -47,17 +47,18 @@ from app.config import Settings
 
 log = logging.getLogger(__name__)
 
-# G の src/Internal.gs と取り決めた action（閉じたリスト）。足すときは G・M と取り決めてからここに書く。
+# G の src/Internal.gs と取り決めた action（仕様書 7-2 の閉じたリスト）。足すときは G・M と取り決めてからここに書く。
 ACTIONS = frozenset({
-    "internal.ping",            # 1 分ごと・切り替えのとき（scriptId・紐づくシート・設定・時間帯・移転モード）
-    "internal.afterApprove1",   # 1 次承認の後（サイン画像の保存 → サイン URL → 承認完了メール → 台帳）
-    "internal.afterApprove2",   # 2 次承認の後（前の PDF をゴミ箱 → PDF → PDF の 2 列 → 台帳）
-    "internal.afterUnapprove",  # 編集で承認が外れた後・取消の後（PDF をゴミ箱 → PDF の 2 列を空に → 台帳の行を消す）
-    "internal.ledgerUpsert",    # 台帳だけ直す（再試行・照合）
+    "internal.ping",            # 5 分ごと・起動時（scriptId・紐づくシート・設定・時間帯・移転モード。何も書かない）
+    "internal.afterApprove1",   # 1 次承認の後（sign → mail → ledger）
+    "internal.afterApprove2",   # 2 次承認の後（pdf →（trash）→ ledger）
+    "internal.afterUnapprove",  # 編集で承認が外れた後・取消の後（sign を空に →（trash）→ ledger の行を消す）
+    "internal.sendWarnMail",    # 有給警告メール（集計タブは VPS が直前に書く）
 })
 
-AUTH_DELEGATE_BEARER = "delegate_bearer"
-AUTH_NONE = "none"
+AUTH_BEARER = "bearer"
+AUTH_ANONYMOUS = "anonymous"
+AUTH_MODES = (AUTH_BEARER, AUTH_ANONYMOUS)
 MAX_REDIRECTS = 5
 REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 REDIRECT_HOSTS = frozenset({"script.googleusercontent.com", "script.google.com"})
@@ -116,21 +117,21 @@ def _looks_like_html(resp: httpx.Response) -> bool:
 class GasClient:
     """http_factory は httpx.Client を作る関数（試験では MockTransport を入れる）。
 
-    auth_mode: "delegate_bearer" なら access_token_provider（引数なしでアクセストークンを返す関数）が要る。
+    auth_mode: "bearer" なら access_token_provider（引数なしでアクセストークンを返す関数）が要る。
     from_settings は google_delegate.get_access_token を使う。
     """
 
     def __init__(self, url: str, token: str, *, timeout: float = 330.0, settings: Settings | None = None,
                  http_factory: Callable[..., httpx.Client] | None = None, monotonic: Callable[[], float] = time.monotonic,
-                 auth_mode: str = AUTH_NONE, access_token_provider: Callable[[], str] | None = None):
+                 auth_mode: str = AUTH_ANONYMOUS, access_token_provider: Callable[[], str] | None = None):
         if settings is not None:
             assert_gas_url_allowed(url, settings)
         if not token:
             raise GasClientConfigError("GAS_INTERNAL_TOKEN が空です")
-        if auth_mode not in (AUTH_DELEGATE_BEARER, AUTH_NONE):
+        if auth_mode not in AUTH_MODES:
             raise GasClientConfigError(f"GAS_INTERNAL_AUTH が正しくありません: {auth_mode}")
-        if auth_mode == AUTH_DELEGATE_BEARER and access_token_provider is None:
-            raise GasClientConfigError("delegate_bearer にはアクセストークンを得る関数が要ります")
+        if auth_mode == AUTH_BEARER and access_token_provider is None:
+            raise GasClientConfigError("bearer にはアクセストークンを得る関数が要ります")
         self.url = url
         self._token = token
         self.timeout = float(timeout)
@@ -144,15 +145,15 @@ class GasClient:
 
     @classmethod
     def from_settings(cls, settings: Settings, **kwargs: Any) -> "GasClient":
-        mode = getattr(settings, "gas_internal_auth", AUTH_DELEGATE_BEARER)
-        if mode == AUTH_DELEGATE_BEARER:
+        mode = getattr(settings, "gas_internal_auth", AUTH_BEARER)
+        if mode == AUTH_BEARER:
             kwargs.setdefault("access_token_provider", _delegate_token_provider(settings))
         return cls(settings.gas_internal_url, settings.gas_internal_token,
                    timeout=settings.gas_call_timeout_seconds, settings=settings, auth_mode=mode, **kwargs)
 
     def _first_headers(self, action: str) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.auth_mode == AUTH_DELEGATE_BEARER:
+        if self.auth_mode == AUTH_BEARER:
             try:
                 access_token = self._access_token_provider()  # type: ignore[misc]
             except Exception as exc:  # noqa: BLE001 - 委任が無い・更新に失敗した（中身は出さない）
@@ -170,7 +171,7 @@ class GasClient:
         if not job_id:
             raise ValueError("job_id が空です（GAS は jobId で二重の処理を防ぐ）")
         body: dict[str, Any] = {"internal": True, "token": self._token, "action": action, "jobId": str(job_id),
-                                "requestId": request_id or ""}
+                                "reqId": request_id or ""}
         if expect is not None:
             body["expect"] = dict(expect)
         if args is not None:
@@ -191,9 +192,9 @@ class GasClient:
                                                 status=resp.status_code)
                     location = resp.headers.get("location", "")
                     target = urljoin(str(resp.request.url), location)
-                    parts = urlsplit(target)
-                    if not location or parts.scheme != "https" or parts.hostname not in REDIRECT_HOSTS:
-                        raise GasAuthError(f"GAS の入口がほかの場所へ転送しました（{action}、{parts.hostname or '不明'}）。"
+                    target_parts = urlsplit(target)
+                    if not location or target_parts.scheme != "https" or target_parts.hostname not in REDIRECT_HOSTS:
+                        raise GasAuthError(f"GAS の入口がほかの場所へ転送しました（{action}、{target_parts.hostname or '不明'}）。"
                                            "ログインを求められています", status=resp.status_code)
                     # 転送先には Authorization を付けない。307・308 は本文ごと送り直す（GAS は 302 を返す）
                     if resp.status_code in (307, 308):

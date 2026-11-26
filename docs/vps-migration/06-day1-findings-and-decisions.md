@@ -106,3 +106,34 @@
 | K-11 | 統合業務メールの本文のリンク（M_SYSTEM_SETTING の `APP_URL`） | **切り替えと同時に新しいアドレス `https://leave.lineworks-local.net/` に書き換える**（オーナー:「期限が切れた際の書き換えを忘れそうなので」）。切り替えの手順書に「`APP_URL` の元の値を控える → 書き換える」を入れ、戻す手順に「元の値に書き戻す」を入れる。移転モードの GAS は `APP_URL` を画面の移動に使わない（移転ページは `MIGRATED_TO_URL` を使う）ので、切り替え後の害は無い |
 
 仕様書 15 章のほかの項目（Q1・Q3・Q6・Q9〜Q14）は既定「今のまま」で進める。Q2（2 次承認者はログイン中のメールを使う）と Q5（2 次承認のやり直しを止める）はディレクター判断で「直す」。Q7（最終有給日）と Q16（承認完了メールが届いているか）は実物を見てから。
+
+## 5. Sheets API で読んだ実物（2026-11-26 10:50。委任の許可の後、api コンテナから読むだけ。**確認済み**。3 節の「まだ確かめていないこと」のうち時間帯と型はこれで確定）
+
+- **時間帯 `Etc/GMT`、地域 `en_US`**（`properties.timeZone`・`locale`）。`.env` の `DB_SHEET_TIMEZONE=Etc/GMT` で確定。
+- タブ: `SHEET_MAP`・`M_CALENDAR`（131 行）・`作業員マスタ`（51）・`M_SYSTEM_SETTING`・`M_DEPT_APPROVERS`（14）・`M_LOOKUP`・`BatchLogs`・`PDF_CELL_MAP`・`README`・`CONFIG`・`LOOKUP`・`M_DEPT`・`M_WORKER`・`T_LEAVE_REQUEST`（グリッド 948 行 × 26 列、1 行目固定）・`V_LEAVE_SUMMARY`・`PDF_TEMPLATE`・`M_STAMP`（9）・`PDF_MAP`。雛形由来のタブ（SHEET_MAP・PDF_CELL_MAP・README・CONFIG・LOOKUP・M_DEPT・M_WORKER・PDF_TEMPLATE・PDF_MAP・BatchLogs）は触らない。
+- **T_LEAVE_REQUEST の行の位置**: 見出しは 1 行目、データは 2 行目から 332 行目まで。**REQ_ID が空の行が途中に 52 行ある**（11 行目から続く）。REQ_ID のある行は 279。先頭に空の行は無い（inv-4 の「先頭に約 500 行」は当たらない）。新しい行は「REQ_ID の列で値のある最後の行（332）の次」に書く。
+- **セルの型（UNFORMATTED_VALUE、279 行）**
+
+| 列 | 型 |
+|---|---|
+| REQ_ID・STATUS・DEPT_ID・DEPT_NAME・WORKER_NAME・DAY_TYPE・LEAVE_KIND・CREATED_BY_EMAIL | 文字 |
+| FY_START_YEAR・**WORKER_ID** | **数（int）**。WORKER_ID は文字ではなく数のセル |
+| APPLIED_AT・APPROVED_AT・APPROVED_AT2 | 日時のシリアル値（小数つき）。GMT の壁時計（JST − 9 時間）。APPROVED_AT2 も時刻を持つ（表示の形が日付だけ） |
+| **LEAVE_DATE** | **270 行が `.625`（＝GMT 15:00＝JST 翌日 0:00）、9 行が整数（＝GMT 0:00＝JST 9:00）**。例: 最後の行は `46352.625` で、表示は `2026-11-26` だが、**休暇日は JST の 2026-11-27**。シートの表示・gviz の日付は 1 日早く見える（2-5 節の gviz の日付はこの意味で読む） |
+| SUBSTITUTE_FOR_WORK_DATE | 77 行が `.625`、2 行が整数、200 行が空 |
+| HALF_TYPE・SPECIAL_REASON_TEXT・PAIDLEAVE_DETAIL・SIGN_IMAGE_URL・PDF_URL・APPROVED_BY1_EMAIL・APPROVED_BY2・APPROVED_BY2_EMAIL | 文字か空 |
+| SPECIAL_REASON_REF・DETAIL_FREE・UPDATED_AT | 全行が空 |
+
+- 文字で書かれた日付の行は無い（inv-4 の「3/28〜4/11 の編集は文字」は、今の実物には残っていない）。
+- **V_LEAVE_SUMMARY**: 年度・作業員ID・回数は数（有給回数は 0.5 刻み）。**最終有給日は日付のシリアル値（数のセル）**。GAS はこれを Date で読み `String(Date)` にするので、画面には長い英語の日付で出ている見込み（K5。画面で確かめる）。警告レベルは文字か空。
+- M_SYSTEM_SETTING は 15 行（見出し＋14 キー）。重複するキーは無い。
+
+## 6. ステージングの資源（2026-11-26 作成。imaizumi@ 所有。見守りの後に片付ける）
+
+| もの | ID | 中身 |
+|---|---|---|
+| フォルダ「【ステージング】休暇届 PDF・台帳（消してよい）」 | `1T6ZZ8t-G7fq8BxMUoB7yw2I8i2VXqRCm` | 試験用の PDF・サイン画像の置き場（`STAGING_PDF_FOLDER_ID`）。下の 2 冊もこの中 |
+| 「【ステージング】休暇届けapp（消してよい）」 | `1SG4FV9raYuFu8jaWzCVpXvKqo1LPEO7aR44KifWrYqw` | 本番 DB の 2026-11-26 10:55 ごろの複製（`STAGING_SPREADSHEET_ID`）。時間帯 `Etc/GMT`・`en_US`。M_SYSTEM_SETTING の `PDF_FOLDER_ID`・`LEDGER_SSID`・`MAIL_TO`（オーナーの 1 件だけ）を書き換え、T_LEAVE_REQUEST の `SIGN_IMAGE_URL`・`PDF_URL` を空にした。`APP_URL` は写しの GAS をデプロイした後で書き換える |
+| 「【ステージング】休暇届台帳（消してよい）」 | `1FpeButODbprm7Bri2WQWlDgwzYDwiwLb8FvWu1XO2YM` | 台帳の複製（`STAGING_LEDGER_SPREADSHEET_ID`） |
+
+写しの GAS（複製に付いたスクリプト）の scriptId とデプロイは、G 担当のコードを入れるときに控える。

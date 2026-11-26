@@ -3,14 +3,13 @@
 - 書いてよいスプレッドシート: production は PROD_SPREADSHEET_ID だけ、staging は STAGING_SPREADSHEET_ID だけ。
 - 書いてよいタブ:
   - A 区分 T_LEAVE_REQUEST（行単位で書く）は row_sync・reconcile だけ。
-  - S 区分 V_LEAVE_SUMMARY（DB から全行を書き直す）は summary_sync だけ。
+  - S 区分 V_LEAVE_SUMMARY（DB から全行を書き直す）は summary_sheet だけ。
   - C 区分（作業員マスタ・M_CALENDAR・M_STAMP・M_DEPT_APPROVERS）は master_sync だけ。
 - どの環境も書かない: マスタ元・カレンダー等の読み先・休暇届台帳（両方の環境）・PDF フォルダ・ほかの
   スプレッドシート。M_SYSTEM_SETTING・M_LOOKUP（読むだけ）とほかのタブ。
-- 使ってよい書き方: updateCells・values.batchUpdate・values.batchClear（C 区分と V_LEAVE_SUMMARY の余りの行だけ）・
-  appendDimension（ROWS、A 区分の末尾だけ）・values.append（T_LEAVE_REQUEST の新しい行の REQ_ID だけ。
-  RAW・OVERWRITE＝表の次の空の行に書く。行を挿入しない）。
-  行・列・タブの挿入・削除・並べ替え・作り直しは使わない。
+- 使ってよい書き方（仕様書 9-1）: updateCells・values.update／values.batchUpdate（V_LEAVE_SUMMARY とマスタ）・
+  values.batchClear（V_LEAVE_SUMMARY とマスタの余りだけ）・appendDimension（ROWS、T_LEAVE_REQUEST の末尾だけ）。
+  values.append・行・列・タブの挿入・削除・並べ替え・作り直し・T_LEAVE_REQUEST の clear は使わない。
 - Drive: api・worker は呼ばない（このモジュールに Drive の許可は無い）。
 
 確かめる時: 起動時（verify_startup。api と worker）と、書き込みの直前
@@ -54,17 +53,17 @@ READ_ONLY_TABS = frozenset({TAB_SETTINGS, TAB_LOOKUP})
 PURPOSE_TABS: dict[str, frozenset[str]] = {
     "row_sync": A_TABS,
     "reconcile": A_TABS,
-    "summary_sync": S_TABS,
+    "summary_sheet": S_TABS,
     "master_sync": C_TABS,
 }
 
 # spreadsheets.batchUpdate で使ってよい要求の種類
 ALLOWED_BATCH_REQUESTS = frozenset({"updateCells", "appendDimension"})
 # 使ってよい書き方（SheetsApi の関数ごとの名前）
-WRITE_METHODS = frozenset({"updateCells", "values.batchUpdate", "values.batchClear", "appendDimension",
-                           "values.append"})
-# values.append を使ってよいタブ（行の反映が新しい申請の行を取る）
-APPEND_VALUES_TABS = frozenset({TAB_LEAVE_REQUEST})
+WRITE_METHODS = frozenset({"updateCells", "values.update", "values.batchUpdate", "values.batchClear",
+                           "appendDimension"})
+# values.update／values.batchUpdate を使ってよいタブ（全行を書き直すタブ）
+VALUES_WRITE_TABS = C_TABS | S_TABS
 # 余りの行の値を消してよいタブ（全行を書き直すタブ）
 CLEARABLE_TABS = C_TABS | S_TABS
 # 末尾に行を足してよいタブ（行単位のタブだけ。全行を書き直すタブは values の書き込みで広がる）
@@ -152,12 +151,12 @@ def assert_restore_target(spreadsheet_id: str, tab: str, settings: Settings | No
 
 
 def assert_write_method(method: str, tab: str) -> None:
-    """書き方の許可リスト。values.batchClear は C・S 区分だけ、appendDimension は A 区分だけ、
-    values.append は T_LEAVE_REQUEST だけ。"""
+    """書き方の許可リスト。values.update／batchUpdate／batchClear はマスタ・集計だけ、appendDimension は
+    T_LEAVE_REQUEST だけ。"""
     if method not in WRITE_METHODS:
         raise UnsafeWriteError(f"使わない書き方です: {method}")
-    if method == "values.append" and tab not in APPEND_VALUES_TABS:
-        raise UnsafeWriteError("values.append は T_LEAVE_REQUEST の新しい行だけに使えます")
+    if method in ("values.update", "values.batchUpdate") and tab not in VALUES_WRITE_TABS:
+        raise UnsafeWriteError("values の書き込みはマスタ・集計のタブだけに使えます（T_LEAVE_REQUEST は updateCells）")
     if method == "values.batchClear" and tab not in CLEARABLE_TABS:
         raise UnsafeWriteError("値の消去はマスタ・集計のタブの余りの行だけに使えます")
     if method == "appendDimension" and tab not in APPENDABLE_TABS:

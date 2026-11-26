@@ -23,7 +23,7 @@ def test_registrations_land_in_app_worker_schedules(monkeypatch):
 
     from app import worker
 
-    module = types.ModuleType("app.services.summary_sync")
+    module = types.ModuleType("app.services.summary_sheet")
 
     def register_worker():
         from app import worker as w
@@ -31,8 +31,8 @@ def test_registrations_land_in_app_worker_schedules(monkeypatch):
         w.register_schedule("rebuild_leave_summary", task=lambda sf: {"ok": True}, at=(6, 50))
 
     module.register_worker = register_worker
-    monkeypatch.setitem(sys.modules, "app.services.summary_sync", module)
-    assert "app.services.summary_sync" in worker.load_registrations()
+    monkeypatch.setitem(sys.modules, "app.services.summary_sheet", module)
+    assert "app.services.summary_sheet" in worker.load_registrations()
     assert "rebuild_leave_summary" in worker._schedules
 
 

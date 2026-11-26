@@ -27,7 +27,7 @@
    - `https://leave.lineworks-local.net/auth/google-delegate/callback`
 4. 下の「デプロイ」で起動する（staging。分からない ID は罠 50 のとおり仮の値で起動してよい）。
 5. オーナーに、ログインしてから `https://leave.lineworks-local.net/auth/google-delegate/start` を開いてスプレッドシート・ドライブを許可してもらう（未ログインで開くと 1 回目はログインだけで終わるので、もう一度同じアドレスを開く）。
-6. GAS の内部用の入口は `GAS_INTERNAL_AUTH=delegate_bearer`（既定）で、委任のアクセストークンを付けて呼ぶ（GAS の Web アプリが `access: DOMAIN` のため）。ステージングで `internal.ping` が通るかを確かめ、ログイン画面（HTML）が返るなら `gas_ping` の記録に「HTML」と出る。
+6. GAS の内部用の入口は `GAS_INTERNAL_AUTH=bearer`（第 1 案・既定。第 2 案は `anonymous`）で、委任のアクセストークンを付けて呼ぶ（GAS の Web アプリが `access: DOMAIN` のため）。ステージングで `internal.ping` が通るかを確かめ、ログイン画面（HTML）が返るなら `gas_ping` の記録に「HTML」と出る。
 
 ## デプロイ（git archive 方式）
 

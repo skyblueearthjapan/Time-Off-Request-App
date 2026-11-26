@@ -180,7 +180,7 @@ def enqueue(db: Session, kind: str, args: Mapping[str, Any] | None = None, *, la
 
 
 def _job_dict(r: models.Job) -> dict:
-    return {"id": r.id, "kind": r.kind, "lane": r.lane, "requestId": r.request_id, "state": r.state,
+    return {"id": r.id, "kind": r.kind, "lane": r.lane, "reqId": r.request_id, "state": r.state,
             "attempts": r.attempts, "priority": r.priority, "error": r.last_error or "", "batchId": r.batch_id,
             "createdAt": r.created_at, "runAfter": r.run_after}
 
