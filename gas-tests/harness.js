@@ -10,7 +10,7 @@ const vm = require('vm');
 
 const SRC = path.resolve(__dirname, '..', 'src');
 const TOKEN = 'tok-0123456789abcdef0123456789abcdef-XYZ';
-const OWNER = 'owner@lineworks-local.info';
+const OWNER = 'imaizumi@lineworks-local.info'; // Cutover.gs の CUTOVER_OWNER_EMAIL_ と同じ
 const LEDGER_ID = 'LEDGER1';
 const PDF_ROOT = 'PDFROOT';
 const DB_ID = 'DB1';

@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { makeWorld, TOKEN, REQ_HEADER, LEDGER_HEADER } = require('./harness');
 
-const SIGN = 'data:image/png;base64,' + Buffer.from('PNGDATA').toString('base64');
+const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+const SIGN = 'data:image/png;base64,' + Buffer.concat([PNG_MAGIC, Buffer.from('PNGDATA')]).toString('base64');
 const A1_EXPECT = { status: '承認済', approvedAt: '2026-11-20 10:00:00', approvedBy1Email: 'boss@lineworks-local.info' };
 const A2_EXPECT = { status: '承認済', approvedAt2: '2026-11-21 08:00:00', approvedBy2Email: 'somu@lineworks-local.info' };
 
@@ -159,13 +160,15 @@ test('afterApprove1: MAIL_TO が空なら送らず skipped', () => {
   assert.equal(w.mails.length, 0);
 });
 
-test('同じ jobId の再試行でメール 1 通・サイン 1 つ（台帳で失敗 → 送り直し）', () => {
+test('同じ jobId の再試行でメール 1 通・サイン 1 つ（台帳だけ失敗 → ok:true のまま、送り直すと台帳だけやり直す）', () => {
   const w = makeWorld();
   w.ledgerDown = true;
   const r1 = approve1(w);
-  assert.equal(r1.ok, false);
-  assert.equal(r1.error, 'ledger_unavailable');
-  assert.equal(r1.retryable, true);
+  assert.equal(r1.ok, true, '台帳だけの失敗で全体を失敗にしない');
+  assert.equal(r1.ledger.status, 'error');
+  assert.equal(r1.ledger.error, 'ledger_unavailable');
+  assert.equal(r1.ledger.retryable, true);
+  assert.ok(r1.ledger.message);
   assert.equal(r1.sign.status, 'saved', '済んだ段の結果を返す');
   assert.equal(r1.mail.status, 'sent');
   assert.equal(w.count('SpreadsheetApp.create'), 0, '台帳を作らない');
@@ -207,7 +210,7 @@ test('同じ jobId を別の action に使うと bad_request', () => {
 
 test('expect が今の行と違えば何もせず row_not_synced', () => {
   const w = makeWorld();
-  for (const ex of [{ status: '取消' }, { approvedAt: '2026-11-20 10:00:01' }, { approvedBy1Email: 'x@lineworks-local.info' }, { leaveDate: '2026-12-02' }]) {
+  for (const ex of [{ status: '取消' }, { approvedAt: '2026-11-20 10:00:02' }, { approvedAt: '2026-11-20T10:00:00' }, { approvedBy1Email: 'x@lineworks-local.info' }, { leaveDate: '2026-12-02' }]) {
     const r = approve1(w, { jobId: 'j' + JSON.stringify(ex).length, expect: Object.assign({}, A1_EXPECT, ex) });
     assert.equal(r.ok, false); assert.equal(r.error, 'row_not_synced'); assert.equal(r.retryable, true);
   }
@@ -237,30 +240,46 @@ test('ロックが取れなければ busy（何もしない）', () => {
   assert.equal(w.writes.length, 0);
 });
 
-test('台帳の見出しが違えば書かずに ledger_header_mismatch（retryable:false）', () => {
+test('台帳の見出しが違えば書かずに ledger.status:error（ledger_header_mismatch・retryable:false）。メールは送る', () => {
   const w = makeWorld({ badLedgerHeader: true });
   const before = JSON.stringify(w.ledger.sheets['2026年度'].data);
   const r = approve1(w);
-  assert.equal(r.ok, false);
-  assert.equal(r.error, 'ledger_header_mismatch');
-  assert.equal(r.retryable, false);
+  assert.equal(r.ok, true);
+  assert.equal(r.ledger.status, 'error');
+  assert.equal(r.ledger.error, 'ledger_header_mismatch');
+  assert.equal(r.ledger.retryable, false);
+  assert.equal(r.mail.status, 'sent');
   assert.equal(JSON.stringify(w.ledger.sheets['2026年度'].data), before);
 });
 
-test('台帳に書けたか読み直す: 黙って失敗したら ledger_unconfirmed', () => {
+test('台帳に書けたか読み直す: 黙って失敗したら ledger.status:error（ledger_unconfirmed）', () => {
   const w = makeWorld();
   w.ctx.updateLedger_ = () => { w.calls.push(['updateLedger_']); };
   const r = approve1(w);
-  assert.equal(r.error, 'ledger_unconfirmed');
-  assert.equal(r.retryable, true);
+  assert.equal(r.ok, true);
+  assert.equal(r.ledger.status, 'error');
+  assert.equal(r.ledger.error, 'ledger_unconfirmed');
+  assert.equal(r.ledger.retryable, true);
   assert.equal(w.count('updateLedger_'), 1);
+});
+
+test('台帳の段の中の例外も ledger.status:error（全体は ok:true）', () => {
+  const w = makeWorld();
+  w.ctx.updateLedger_ = () => { throw new Error('boom'); };
+  const r = approve1(w);
+  assert.equal(r.ok, true);
+  assert.equal(r.ledger.status, 'error');
+  assert.equal(r.ledger.error, 'ledger_error');
+  assert.equal(r.ledger.message, 'boom');
+  assert.equal(r.mail.status, 'sent');
 });
 
 test('LEDGER_SSID が空・開けないとき台帳を作らない（getLedgerSs_ の自動作成を動かさない）', () => {
   const w = makeWorld();
   w.db.sheets.M_SYSTEM_SETTING.data.find(r => r[0] === 'LEDGER_SSID')[1] = '';
   const r = approve1(w);
-  assert.equal(r.error, 'ledger_unavailable');
+  assert.equal(r.ok, true);
+  assert.equal(r.ledger.error, 'ledger_unavailable');
   assert.equal(w.count('SpreadsheetApp.create'), 0);
   // 入口の後は、画面から呼ぶ getLedgerSs_ は今のまま（差し替えが戻っている）
   assert.match(String(w.ctx.getLedgerSs_), /SpreadsheetApp\.create/);
@@ -306,7 +325,9 @@ test('afterApprove2: 再試行で PDF は 1 つ（台帳で失敗 → 送り直�
   const w = makeWorld();
   w.ledgerDown = true;
   const r1 = approve2(w);
-  assert.equal(r1.error, 'ledger_unavailable');
+  assert.equal(r1.ok, true);
+  assert.equal(r1.ledger.status, 'error');
+  assert.equal(r1.ledger.error, 'ledger_unavailable');
   assert.equal(r1.pdf.status, 'created');
   w.ledgerDown = false;
   const r2 = approve2(w);
@@ -415,18 +436,47 @@ test("afterUnapprove: 'trash' はシートの PDF_URL が oldPdfUrl と同じと
   assert.equal(w2.files.OLDPDF3.trashed, false);
 });
 
-test('afterUnapprove: oldLeaveDate・reason が無ければ bad_request', () => {
+test('afterUnapprove: reason が違えば bad_request（何も書かない）', () => {
   const w = makeWorld();
-  assert.equal(unapprove(w, { oldLeaveDate: '' }).error, 'bad_request');
-  assert.equal(unapprove(w, { oldLeaveDate: '2026/12/03' }).error, 'bad_request');
   assert.equal(unapprove(w, { reason: 'other' }).error, 'bad_request');
   assert.equal(w.writes.length, 0);
 });
 
-test('afterUnapprove: 台帳から消えたか読み直す（黙って失敗したら ledger_unconfirmed）', () => {
+test('afterUnapprove: oldLeaveDate の形が違っても失敗にせず、台帳の行は REQ_ID だけで探して消す', () => {
+  for (const bad of ['', '2026/12/03', null]) {
+    const w = makeWorld();
+    w.ledger.insertSheet('2027年度', 0).data.push(LEDGER_HEADER.slice());
+    const r = unapprove(w, { oldLeaveDate: bad });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.equal(r.sign.status, 'cleared');
+    assert.equal(r.ledger.status, 'removed');
+    assert.equal(r.ledger.searchedBy, 'reqId');
+    assert.equal(r.ledger.sheetName, '2026年度');
+    assert.ok(!w.ledgerIds('2026年度').includes('LV-20261120-003'));
+  }
+  // 台帳が開けなければ台帳の段だけ error
+  const w2 = makeWorld();
+  w2.ledgerDown = true;
+  const r2 = unapprove(w2, { oldLeaveDate: 'x' });
+  assert.equal(r2.ok, true);
+  assert.equal(r2.sign.status, 'cleared');
+  assert.equal(r2.ledger.status, 'error');
+  assert.equal(r2.ledger.error, 'ledger_unavailable');
+  // 見出しの違う年度タブにあれば、その段だけ error（書かない）
+  const w3 = makeWorld({ badLedgerHeader: true });
+  const r3 = unapprove(w3, { oldLeaveDate: '' });
+  assert.equal(r3.ok, true);
+  assert.equal(r3.ledger.error, 'ledger_header_mismatch');
+  assert.ok(w3.ledgerIds('2026年度').includes('LV-20261120-003'));
+});
+
+test('afterUnapprove: 台帳から消えたか読み直す（黙って失敗したら ledger.status:error・ledger_unconfirmed）', () => {
   const w = makeWorld();
   w.ctx.removeLedgerRow_ = () => {};
-  assert.equal(unapprove(w).error, 'ledger_unconfirmed');
+  const r = unapprove(w);
+  assert.equal(r.ok, true);
+  assert.equal(r.ledger.status, 'error');
+  assert.equal(r.ledger.error, 'ledger_unconfirmed');
 });
 
 // ---------------------------------------------------------------- sendWarnMail
@@ -464,4 +514,129 @@ test('sendWarnMail: MAIL_TO が空なら送らない', () => {
   const r = w.call('internal.sendWarnMail', { jobId: 'w3' });
   assert.equal(r.mail.status, 'mail_to_empty');
   assert.equal(w.mails.length, 0);
+});
+
+// ---------------------------------------------------------------- R2: 台帳へ書く文字（式を動かさない）
+test('台帳へ書く文字: 入口からは先頭 = + - @ の文字に \' を付ける（数は除く）。画面からの updateLedger_ は今のまま', () => {
+  const w = makeWorld();
+  const row = w.reqSheet.data.find(x => x[0] === 'LV-20261120-001');
+  row[REQ_HEADER.indexOf('WORKER_NAME')] = '=IMPORTXML("https://evil.example.com","//a")';
+  row[REQ_HEADER.indexOf('PAIDLEAVE_DETAIL')] = '+SUM(1,2)';
+  row[REQ_HEADER.indexOf('DEPT_NAME')] = '-5';
+  row[REQ_HEADER.indexOf('APPROVED_BY1_EMAIL')] = '@boss';
+  const r = approve1(w, { expect: { status: '承認済' } });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(r.ledger.status, 'upserted');
+  const lrow = w.ledger.sheets['2026年度'].data.find(x => x[0] === 'LV-20261120-001');
+  assert.equal(lrow[3], '\'=IMPORTXML("https://evil.example.com","//a")', '氏名');
+  assert.equal(lrow[10], "'+SUM(1,2)", '理由・詳細');
+  assert.equal(lrow[2], '-5', '数として読めるものはそのまま');
+  assert.equal(lrow[14], "'@boss", '1次承認者');
+  assert.equal(lrow[0], 'LV-20261120-001');
+  // 入口の後は api_getLeaveRequestById が元に戻っている
+  assert.equal(w.ctx.api_getLeaveRequestById('LV-20261120-001').workerName, '=IMPORTXML("https://evil.example.com","//a")');
+  // 画面から呼ぶ updateLedger_ は今のまま（文字をそのまま書く）
+  w.ctx.updateLedger_('LV-20261120-001');
+  const lrow2 = w.ledger.sheets['2026年度'].data.find(x => x[0] === 'LV-20261120-001');
+  assert.equal(lrow2[3], '=IMPORTXML("https://evil.example.com","//a")');
+});
+
+test('台帳へ書く文字: PDF の列は今の HYPERLINK の式のまま', () => {
+  const w = makeWorld();
+  const r = approve2(w);
+  assert.equal(r.ok, true);
+  const lrow = w.ledger.sheets['2026年度'].data.find(x => x[0] === 'LV-20261120-002');
+  assert.equal(lrow[19], '=HYPERLINK("' + r.pdf.pdfUrl + '","PDF")');
+});
+
+test('vpsLedgerSafeText_: 文字だけを直す', () => {
+  const w = makeWorld();
+  const f = w.ctx.vpsLedgerSafeText_;
+  assert.equal(f('=1+1'), "'=1+1");
+  assert.equal(f('+81-90'), "'+81-90");
+  assert.equal(f('-'), "'-");
+  assert.equal(f('@x'), "'@x");
+  assert.equal(f('-1.5'), '-1.5');
+  assert.equal(f('+3'), '+3');
+  assert.equal(f('1e3'), '1e3');
+  assert.equal(f('山田'), '山田');
+  assert.equal(f(''), '');
+  assert.equal(f(12), 12);
+});
+
+// ---------------------------------------------------------------- R2: 段の記録と reqId
+test('同じ jobId で reqId が違えば bad_request（返事の再生・段の記録の両方）', () => {
+  const w = makeWorld();
+  assert.equal(approve1(w).ok, true);
+  const r1 = approve1(w, { reqId: 'LV-20261120-002', expect: {} });
+  assert.equal(r1.ok, false);
+  assert.equal(r1.error, 'bad_request');
+  assert.equal(r1.replayed, undefined);
+  w.cache = {}; // 返事の再生が無くても、段の記録で止まる
+  const r2 = approve1(w, { reqId: 'LV-20261120-002', expect: {} });
+  assert.equal(r2.error, 'bad_request');
+  assert.match(r2.message, /another reqId/);
+  assert.equal(w.mails.length, 1);
+  assert.equal(signFiles(w).length, 1);
+  assert.equal(w.cell('LV-20261120-002', 'SIGN_IMAGE_URL'), '');
+  // 記録には reqId が入っている
+  assert.equal(JSON.parse(w.props['ij:j-a1:mail']).q, 'LV-20261120-001');
+  // 同じ reqId なら今まで通り
+  assert.equal(approve1(w).ok, true);
+  assert.equal(w.mails.length, 1);
+});
+
+// ---------------------------------------------------------------- R2: 承認日時の照合
+test('承認日時: セルを秒で切り捨てて比べ、±1 秒は同じとみなす', () => {
+  const cases = [
+    ['2026-11-20T10:00:00.700', true],
+    ['2026-11-20T09:59:59.999', true],
+    ['2026-11-20T10:00:01.500', true],
+    ['2026-11-20T09:59:59.000', true],
+    ['2026-11-20T10:00:02.000', false],
+    ['2026-11-20T09:59:58.900', false],
+  ];
+  for (const [cell, same] of cases) {
+    const w = makeWorld();
+    const row = w.reqSheet.data.find(x => x[0] === 'LV-20261120-001');
+    row[REQ_HEADER.indexOf('APPROVED_AT')] = w.jst(cell);
+    const r = approve1(w, { expect: { status: '承認済', approvedAt: '2026-11-20 10:00:00' } });
+    assert.equal(r.ok, same, cell + ' ' + JSON.stringify(r));
+    if (!same) assert.equal(r.error, 'row_not_synced');
+  }
+  // 2 次承認日時も同じ比べ方
+  const w2 = makeWorld();
+  w2.reqSheet.data.find(x => x[0] === 'LV-20261120-002')[REQ_HEADER.indexOf('APPROVED_AT2')] = w2.jst('2026-11-21T08:00:00.400');
+  assert.equal(approve2(w2).ok, true);
+  // セルが空で expect が空なら合う。セルに日時があって expect が空なら合わない
+  const w3 = makeWorld();
+  assert.equal(approve1(w3, { expect: { approvedAt2: '' } }).ok, true);
+  assert.equal(approve1(w3, { jobId: 'j-x', expect: { approvedAt: '' } }).error, 'row_not_synced');
+});
+
+// ---------------------------------------------------------------- R2: 手書きサインの確かめ
+test('手書きサイン: 2MB を超える・PNG でなければ保存せず sign.status:error、メールと台帳は続ける', () => {
+  const big = 'data:image/png;base64,' + Buffer.concat([PNG_MAGIC, Buffer.alloc(2 * 1024 * 1024)]).toString('base64');
+  const notPng = 'data:image/png;base64,' + Buffer.from('GIF89a-not-png').toString('base64');
+  for (const [sign, msg] of [[big, /2MB/], [notPng, /not PNG/], ['data:image/png;base64,AA', /not PNG/]]) {
+    const w = makeWorld();
+    const r = approve1(w, { args: { signBase64: sign, leaveDate: '2026-12-01' } });
+    assert.equal(r.ok, true, JSON.stringify(r).slice(0, 300));
+    assert.equal(r.sign.status, 'error');
+    assert.match(r.sign.error, msg);
+    assert.equal(r.sign.signImageUrl, '');
+    assert.equal(signFiles(w).length, 0);
+    assert.equal(w.cell('LV-20261120-001', 'SIGN_IMAGE_URL'), '', '今の失敗時と同じく列は空');
+    assert.equal(r.mail.status, 'sent');
+    assert.equal(r.ledger.status, 'upserted');
+  }
+});
+
+test('手書きサイン: GAS の base64Decode が符号付きのバイトを返しても PNG と分かる。ちょうど 2MB は通す', () => {
+  const w = makeWorld();
+  w.ctx.Utilities.base64Decode = s => Array.from(new Int8Array(Buffer.from(s, 'base64')));
+  const exact = 'data:image/png;base64,' + Buffer.concat([PNG_MAGIC, Buffer.alloc(2 * 1024 * 1024 - 8)]).toString('base64');
+  const r = approve1(w, { args: { signBase64: exact, leaveDate: '2026-12-01' } });
+  assert.equal(r.sign.status, 'saved', JSON.stringify(r.sign));
+  assert.equal(signFiles(w).length, 1);
 });

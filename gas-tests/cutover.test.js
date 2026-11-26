@@ -216,6 +216,35 @@ test('運用関数は持ち主以外（画面から呼ぶ人）では拒む', ()
   }
 });
 
+test('運用関数は持ち主のメール（imaizumi@lineworks-local.info）だけ。active === effective でも別の人なら拒む', () => {
+  for (const fn of OPERATOR_FNS) {
+    const w = makeWorld();
+    w.users.active = 'other@lineworks-local.info';
+    w.users.effective = 'other@lineworks-local.info'; // スクリプトの写しを別の人がエディタから実行
+    assert.throws(() => w.ctx[fn](NEW), /スクリプトの持ち主/, fn);
+    w.users.active = 'imaizumi@lineworks-local.info'; // 持ち主が見ても、実行が別の人なら拒む
+    assert.throws(() => w.ctx[fn](NEW), /スクリプトの持ち主/, fn);
+    assert.equal(w.count('setProperty') + w.count('deleteProperty') + w.count('deleteTrigger') + w.count('newTrigger'), 0, fn);
+  }
+  const w2 = makeWorld();
+  w2.users.active = ' Imaizumi@LINEWORKS-local.info ';
+  w2.users.effective = 'imaizumi@lineworks-local.info';
+  assert.equal(w2.ctx.assertCutoverOperator_(), 'imaizumi@lineworks-local.info', '大文字・空白は同じとみなす');
+});
+
+test('移転モードの止めの文: Error: で始まらず、新しいアドレスを含む（画面の withFailureHandler の err.message）', () => {
+  const w = makeWorld();
+  w.migrate(NEW);
+  w.users.active = 'someone@lineworks-local.info';
+  for (const fn of ['api_getLeaveRequestById', 'api_approveLeaveRequest', 'api_getApproverList']) {
+    let err = null;
+    try { w.ctx[fn]('LV-20261120-001'); } catch (e) { err = e; }
+    assert.ok(err, fn);
+    assert.ok(!/^Error: /.test(err.message), err.message);
+    assert.equal(err.message, '休暇届は新しいアドレスへ移りました。https://leave.lineworks-local.net/ を開いてください。（この画面からは操作できません）');
+  }
+});
+
 test('enterMigrationMode: 引数なし・違うアドレスは止まる。休暇届のアドレスだけ受ける', () => {
   const w = makeWorld();
   assert.throws(() => w.ctx.enterMigrationMode(), /引数に渡してください/);

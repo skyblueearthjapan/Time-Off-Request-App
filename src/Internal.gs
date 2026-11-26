@@ -18,6 +18,10 @@
 //       中で api_* を呼ばない（api_getLeaveRequestById は今の関数が中で使うだけ）。rebuildLeaveSummary_ は呼ばない。
 // 台帳: 書く・消す前に LEDGER_SSID を開けるか・年度タブの見出しを確かめ、後で行を読み直して確かめる。
 //       入口から呼ぶ間だけ getLedgerSs_ を「開くだけ」に差し替え、新しい台帳を作らない（画面からの今の動きは変えない）。
+//       同じく入口から呼ぶ間だけ、台帳へ書く文字の先頭の = + - @ に ' を付ける（式として動かさない）。
+//       台帳の段だけの失敗は、全体を ok:true のまま ledger:{status:'error', error, message, retryable} で返す
+//       （今の GAS が台帳の失敗を握りつぶして続けるのと同じ）。この返事は CacheService に置かない。
+// 段の記録と返事の再生は reqId と結び付け、同じ jobId で reqId が違えば bad_request。
 
 var INTERNAL_API_VERSION = 1;
 var VPS_INTERNAL_TOKEN_KEY_ = 'VPS_INTERNAL_TOKEN';
@@ -107,7 +111,7 @@ function vpsDispatch_(body) {
     var args = (body.args && typeof body.args === 'object') ? body.args : {};
     var expect = (body.expect && typeof body.expect === 'object') ? body.expect : {};
 
-    var replay = vpsReplay_(jobId, action);
+    var replay = vpsReplay_(jobId, action, reqId);
     if (replay) return replay;
 
     lock = LockService.getScriptLock();
@@ -115,7 +119,7 @@ function vpsDispatch_(body) {
       return vpsFail_('busy', 'script lock not available', true, { action: action, jobId: jobId, reqId: reqId });
     }
     locked = true;
-    replay = vpsReplay_(jobId, action); // 待っている間に同じ jobId が済んだとき
+    replay = vpsReplay_(jobId, action, reqId); // 待っている間に同じ jobId が済んだとき
     if (replay) return replay;
 
     var job = { jobId: jobId, action: action, reqId: reqId, args: args, expect: expect };
@@ -131,7 +135,8 @@ function vpsDispatch_(body) {
     result.jobId = jobId;
     if (route.needsReqId) result.reqId = reqId;
     result.durationMs = Date.now() - started;
-    if (result.ok === true) vpsCachePut_(jobId, action, result);
+    // 台帳の段だけが失敗した返事は置かない（同じ jobId の再試行で台帳だけやり直せる）
+    if (result.ok === true && !(result.ledger && result.ledger.status === 'error')) vpsCachePut_(jobId, action, reqId, result);
     return result;
   } finally {
     if (locked) {
@@ -214,13 +219,16 @@ function vpsStageRead_(job, stage) {
   if (rec.a && rec.a !== job.action) {
     throw vpsError_('bad_request', 'jobId was already used for ' + rec.a);
   }
+  if (rec.q !== undefined && rec.q !== job.reqId) {
+    throw vpsError_('bad_request', 'jobId was already used for another reqId');
+  }
   return rec.r || null;
 }
 
 function vpsStageWrite_(job, stage, result) {
   try {
     PropertiesService.getScriptProperties().setProperty(vpsStageKey_(job.jobId, stage),
-      JSON.stringify({ t: Date.now(), a: job.action, r: result }));
+      JSON.stringify({ t: Date.now(), a: job.action, q: job.reqId, r: result }));
   } catch (e) {
     // 記録できなくても続ける（罠 36）。再試行でこの段がもう一度動くことがある
     Logger.log('vpsStageWrite_: ' + e.message);
@@ -262,7 +270,7 @@ function vpsPruneStageRecords_() {
 }
 
 // 全段が済んだ返事（CacheService。例外は握る＝罠 36）
-function vpsReplay_(jobId, action) {
+function vpsReplay_(jobId, action, reqId) {
   var raw = null;
   try {
     raw = CacheService.getScriptCache().get(VPS_STAGE_PREFIX_ + jobId);
@@ -277,13 +285,16 @@ function vpsReplay_(jobId, action) {
   if (rec.a !== action) {
     return vpsFail_('bad_request', 'jobId was already used for ' + rec.a, false, { action: action, jobId: jobId });
   }
+  if (rec.q !== undefined && rec.q !== reqId) {
+    return vpsFail_('bad_request', 'jobId was already used for another reqId', false, { action: action, jobId: jobId });
+  }
   rec.r.replayed = true;
   return rec.r;
 }
 
-function vpsCachePut_(jobId, action, result) {
+function vpsCachePut_(jobId, action, reqId, result) {
   try {
-    CacheService.getScriptCache().put(VPS_STAGE_PREFIX_ + jobId, JSON.stringify({ a: action, r: result }), VPS_REPLAY_CACHE_SECONDS_);
+    CacheService.getScriptCache().put(VPS_STAGE_PREFIX_ + jobId, JSON.stringify({ a: action, q: reqId, r: result }), VPS_REPLAY_CACHE_SECONDS_);
   } catch (e) {
     Logger.log('vpsCachePut_: ' + e.message);
   }
@@ -340,6 +351,24 @@ function vpsCellText_(v, kind) {
   return normalize_(v);
 }
 
+// 'yyyy-MM-dd HH:mm:ss'（JST）→ ミリ秒。形が違えば null
+function vpsParseJstDateTime_(s) {
+  var m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/.exec(String(s == null ? '' : s).trim());
+  if (!m) return null;
+  var t = new Date(m[1] + 'T' + m[2] + '+09:00').getTime();
+  return isNaN(t) ? null : t;
+}
+
+// 日時のセルと expect（VPS が秒で切り捨てた JST の文字）を、セルを秒で切り捨てて比べる。
+// シリアル値の丸め（10:00:00 が 09:59:59.999 になる等）のため、±1 秒は同じとみなす。
+function vpsDateTimeMatches_(cell, want) {
+  if (!(cell instanceof Date) || isNaN(cell.getTime())) return vpsCellText_(cell, 'datetime') === want;
+  var w = vpsParseJstDateTime_(want);
+  if (w === null) return false;
+  var g = Math.floor(cell.getTime() / 1000) * 1000;
+  return Math.abs(g - w) <= 1000;
+}
+
 // 合わない項目の名前の一覧（空なら合っている）。知らない項目は合わない扱い
 function vpsExpectMismatch_(rc, expect) {
   var bad = [];
@@ -348,8 +377,9 @@ function vpsExpectMismatch_(rc, expect) {
     var def = VPS_EXPECT_COLUMNS_[k];
     if (!def || rc.idx[def.col] === undefined) { bad.push(k); return; }
     var want = expect[k] == null ? '' : normalize_(expect[k]);
-    var got = vpsCellText_(rc.row[rc.idx[def.col]], def.kind);
-    if (got !== want) bad.push(k);
+    var cell = rc.row[rc.idx[def.col]];
+    var same = def.kind === 'datetime' ? vpsDateTimeMatches_(cell, want) : vpsCellText_(cell, def.kind) === want;
+    if (!same) bad.push(k);
   });
   return bad;
 }
@@ -408,6 +438,10 @@ function vpsLedgerPrecheck_(fy) {
   var name = fy + '年度';
   var sh = ss.getSheetByName(name);
   if (!sh) return null; // タブが無ければ今の関数が作る
+  return vpsLedgerHeaderCheck_(sh, name);
+}
+
+function vpsLedgerHeaderCheck_(sh, name) {
   var head = sh.getRange(1, 1, 1, VPS_LEDGER_HEADERS_.length).getValues()[0];
   for (var c = 0; c < VPS_LEDGER_HEADERS_.length; c++) {
     if (String(head[c] == null ? '' : head[c]) !== VPS_LEDGER_HEADERS_[c]) {
@@ -415,6 +449,44 @@ function vpsLedgerPrecheck_(fy) {
     }
   }
   return null;
+}
+
+// 台帳へ書く文字が式として動かないように、先頭が = + - @ の文字（数として読めるものは除く）の頭に ' を付ける
+function vpsLedgerSafeText_(v) {
+  if (typeof v !== 'string') return v;
+  if (!/^[=+\-@]/.test(v)) return v;
+  if (/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(v)) return v;
+  return "'" + v;
+}
+
+// updateLedger_ が台帳の行に書く文字の項目（日付・PDF の URL・REQ_ID は除く）
+var VPS_LEDGER_TEXT_FIELDS_ = ['workerId', 'deptName', 'workerName', 'leaveKubun', 'halfDayType', 'leaveType',
+  'specialReason', 'paidDetail', 'status', 'approvedBy1Email', 'approvedBy2'];
+
+// 入口から updateLedger_ を呼ぶ間だけ、api_getLeaveRequestById の返す文字を台帳向けに直す
+// （画面から呼ぶ updateLedger_ の動きは変えない。getLedgerSs_ の差し替えと同じやり方）
+function vpsWithLedgerSafeText_(fn) {
+  var original = api_getLeaveRequestById;
+  api_getLeaveRequestById = function(id) {
+    var d = original(id);
+    if (d) VPS_LEDGER_TEXT_FIELDS_.forEach(function(k) { d[k] = vpsLedgerSafeText_(d[k]); });
+    return d;
+  };
+  try {
+    return fn();
+  } finally {
+    api_getLeaveRequestById = original;
+  }
+}
+
+// 台帳の段の中の例外を、段の失敗（status:'error'）にする
+function vpsLedgerGuard_(fn) {
+  try {
+    return fn();
+  } catch (e) {
+    console.error('台帳の段のエラー（続行）: ' + vpsErrText_(e));
+    return vpsLedgerError_('ledger_error', vpsErrText_(e), true);
+  }
 }
 
 // 年度タブの A 列に reqId があるか。タブが無ければ false、台帳が開けなければ null
@@ -444,7 +516,9 @@ function vpsLedgerUpsert_(reqId, leaveDateText) {
   var sheetName = fy + '年度';
   var pre = vpsLedgerPrecheck_(fy);
   if (pre) return pre;
-  vpsWithLedgerNoCreate_(function() { updateLedger_(reqId); });
+  vpsWithLedgerNoCreate_(function() {
+    vpsWithLedgerSafeText_(function() { updateLedger_(reqId); });
+  });
   if (vpsLedgerHasRow_(sheetName, reqId) !== true) {
     return vpsLedgerError_('ledger_unconfirmed', 'ledger row not found after upsert: ' + reqId, true, sheetName);
   }
@@ -463,11 +537,28 @@ function vpsLedgerRemove_(reqId, leaveDateText) {
   return { status: 'removed', sheetName: sheetName };
 }
 
-// 台帳の段が失敗なら、その段のコードで失敗の返事にする（済んだ段の結果を付ける）
-function vpsLedgerFail_(out) {
-  var extra = {};
-  ['sign', 'mail', 'pdf', 'trash', 'ledger'].forEach(function(k) { if (out[k]) extra[k] = out[k]; });
-  return vpsFail_(out.ledger.error, out.ledger.message, out.ledger.retryable, extra);
+// 休暇日が分からないとき: 年度タブ（「yyyy年度」）の全部から REQ_ID の行を探して消す
+function vpsLedgerRemoveByReqId_(reqId) {
+  var id = normalize_(getSettings_()['LEDGER_SSID']);
+  if (!id) return vpsLedgerError_('ledger_unavailable', 'LEDGER_SSID is not set', true);
+  var ss;
+  try {
+    ss = SpreadsheetApp.openById(id);
+  } catch (e) {
+    return vpsLedgerError_('ledger_unavailable', vpsErrText_(e), true);
+  }
+  var removed = [];
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var name = String(sheets[i].getName());
+    var m = /^(\d{4})年度$/.exec(name);
+    if (!m || vpsLedgerHasRow_(name, reqId) !== true) continue;
+    // その年度の 4 月 1 日（computeFiscalYear_ で同じ年度になる日）で今の関数を呼ぶ
+    var r = vpsLedgerRemove_(reqId, m[1] + '-04-01');
+    if (r.status === 'error') return r;
+    removed.push(name);
+  }
+  return { status: 'removed', sheetName: removed.join(','), searchedBy: 'reqId' };
 }
 
 // ===== 前の PDF をゴミ箱へ（cleanupMode='trash' のときだけ） =====
@@ -584,7 +675,12 @@ function vpsAfterApprove1_(job) {
     var url = '';
     var status = 'cleared';
     var error = '';
-    if (signBase64) {
+    var signBad = signBase64 ? vpsCheckSignPng_(signBase64) : '';
+    if (signBad) {
+      console.error('サイン画像を保存しません（続行）: ' + signBad);
+      status = 'error';
+      error = signBad;
+    } else if (signBase64) {
       var leaveDate = vpsParseYmd_(a.leaveDate) || rc.row[rc.idx['休暇日']];
       try {
         url = saveSignImage_(job.reqId, signBase64, leaveDate) || '';
@@ -619,12 +715,34 @@ function vpsAfterApprove1_(job) {
   });
   SpreadsheetApp.flush();
 
-  // ③ 台帳
+  // ③ 台帳（失敗しても全体は ok:true のまま ledger.status:'error'＝今の GAS が握りつぶして続けるのと同じ）
   out.ledger = vpsStage_(job, 'ledger', function() {
-    return vpsLedgerUpsert_(job.reqId, vpsLeaveDateText_(rc.row[rc.idx['休暇日']]));
+    return vpsLedgerGuard_(function() {
+      return vpsLedgerUpsert_(job.reqId, vpsLeaveDateText_(rc.row[rc.idx['休暇日']]));
+    });
   });
-  if (out.ledger.status === 'error') return vpsLedgerFail_(out);
   return out;
+}
+
+var VPS_SIGN_MAX_BYTES_ = 2 * 1024 * 1024;
+var VPS_PNG_MAGIC_ = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+// 手書きサインが PNG で 2MB 以下か。良ければ ''、だめなら理由
+function vpsCheckSignPng_(signBase64) {
+  var b64 = String(signBase64).replace(/^data:image\/\w+;base64,/, ''); // saveSignImage_ と同じ外し方
+  if (Math.floor(b64.length * 3 / 4) > VPS_SIGN_MAX_BYTES_ + 3) return 'sign image is larger than 2MB';
+  var bytes;
+  try {
+    bytes = Utilities.base64Decode(b64);
+  } catch (e) {
+    return 'sign image is not valid base64';
+  }
+  if (!bytes || bytes.length > VPS_SIGN_MAX_BYTES_) return 'sign image is larger than 2MB';
+  if (bytes.length < VPS_PNG_MAGIC_.length) return 'sign image is not PNG';
+  for (var i = 0; i < VPS_PNG_MAGIC_.length; i++) {
+    if ((bytes[i] & 0xFF) !== VPS_PNG_MAGIC_[i]) return 'sign image is not PNG';
+  }
+  return '';
 }
 
 // ===== internal.afterApprove2 =====
@@ -667,11 +785,12 @@ function vpsAfterApprove2_(job) {
     return vpsTrashFile_(oldId);
   });
 
-  // ③ 台帳（PDF の成否に関係なく）
+  // ③ 台帳（PDF の成否に関係なく。台帳だけの失敗は ok:true のまま ledger.status:'error'）
   out.ledger = vpsStage_(job, 'ledger', function() {
-    return vpsLedgerUpsert_(job.reqId, vpsLeaveDateText_(rc.row[rc.idx['休暇日']]));
+    return vpsLedgerGuard_(function() {
+      return vpsLedgerUpsert_(job.reqId, vpsLeaveDateText_(rc.row[rc.idx['休暇日']]));
+    });
   });
-  if (out.ledger.status === 'error') return vpsLedgerFail_(out);
   if (out.pdf.status === 'error') {
     return vpsFail_('internal', 'pdf: ' + out.pdf.error, true, { failedStage: 'pdf', pdf: out.pdf, trash: out.trash, ledger: out.ledger });
   }
@@ -686,7 +805,7 @@ function vpsAfterUnapprove_(job) {
   var reason = String(a.reason || '');
   if (reason !== 'edit' && reason !== 'cancel') return vpsFail_('bad_request', "reason must be 'edit' or 'cancel'", false);
   var oldLeaveDate = String(a.oldLeaveDate == null ? '' : a.oldLeaveDate).trim();
-  if (!vpsParseYmd_(oldLeaveDate)) return vpsFail_('bad_request', 'oldLeaveDate must be yyyy-MM-dd', false);
+  var oldLeaveDateOk = !!vpsParseYmd_(oldLeaveDate); // 形が違えば、台帳の行は REQ_ID だけで探す
   var mode = vpsCleanupMode_(a);
   var loaded = vpsLoadRow_(job);
   if (loaded.fail) return loaded.fail;
@@ -720,11 +839,13 @@ function vpsAfterUnapprove_(job) {
     return t;
   });
 
-  // ③ 台帳の行を消す（編集前の休暇日の年度タブから。申請中の取消でも呼ぶ＝今のまま）
+  // ③ 台帳の行を消す（編集前の休暇日の年度タブから。申請中の取消でも呼ぶ＝今のまま）。
+  // oldLeaveDate の形が違えば、年度タブの全部から REQ_ID で探す。台帳だけの失敗は ok:true のまま。
   out.ledger = vpsStage_(job, 'ledger', function() {
-    return vpsLedgerRemove_(job.reqId, oldLeaveDate);
+    return vpsLedgerGuard_(function() {
+      return oldLeaveDateOk ? vpsLedgerRemove_(job.reqId, oldLeaveDate) : vpsLedgerRemoveByReqId_(job.reqId);
+    });
   });
-  if (out.ledger.status === 'error') return vpsLedgerFail_(out);
   out.reason = reason;
   return out;
 }

@@ -212,12 +212,15 @@ function showMigratedAddress() {
 // ===== 運用関数を動かしてよい人の確認（罠 48） =====
 // Web アプリは持ち主として実行されるが、画面（google.script.run）から呼ぶと「操作している人」は
 // 利用者のアカウントになるので、持ち主以外は通らない。エディタから実行すれば成り立つ。
+// さらに、持ち主のメールそのものと照合する（スクリプトの写しを別の人が持っても動かないように）。
+var CUTOVER_OWNER_EMAIL_ = 'imaizumi@lineworks-local.info';
+
 function assertCutoverOperator_() {
   var active = '';
   var effective = '';
   try { active = String(Session.getActiveUser().getEmail() || '').trim().toLowerCase(); } catch (e1) { active = ''; }
   try { effective = String(Session.getEffectiveUser().getEmail() || '').trim().toLowerCase(); } catch (e2) { effective = ''; }
-  if (!active || !effective || active !== effective) {
+  if (!active || !effective || active !== effective || active !== CUTOVER_OWNER_EMAIL_) {
     throw new Error('この操作は、スクリプトの持ち主が GAS エディタから実行してください。');
   }
   return active;
