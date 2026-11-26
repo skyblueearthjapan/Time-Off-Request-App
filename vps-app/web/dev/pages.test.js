@@ -320,3 +320,17 @@ test('画面が呼ぶ RPC の名前は閉じたリストの 34 関数だけで�
   assert.deepEqual([...used].filter((n) => !SPEC.ALL.includes(n)), [], '閉じたリストに無い関数');
   assert.deepEqual(SPEC.ALL.filter((n) => !used.has(n)), [], '画面から呼ばれない関数');
 });
+
+test('CSV の出力: = + - @ で始まる値は頭に \' を付けて式にしない（admin・somuAdmin の csvEsc）', () => {
+  for (const page of ['admin', 'somuAdmin']) {
+    const { win } = loadPage(page);
+    assert.equal(win.csvEsc('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"', page);
+    assert.equal(win.csvEsc('+1'), "'+1", page);
+    assert.equal(win.csvEsc('-2+3'), "'-2+3", page);
+    assert.equal(win.csvEsc('@SUM(A1)'), "'@SUM(A1)", page);
+    assert.equal(win.csvEsc('製造1課'), '製造1課', page);
+    assert.equal(win.csvEsc('a,b'), '"a,b"', page);
+    assert.equal(win.csvEsc('2026-11-27'), '2026-11-27', page);
+    assert.equal(win.csvEsc(''), '', page);
+  }
+});
