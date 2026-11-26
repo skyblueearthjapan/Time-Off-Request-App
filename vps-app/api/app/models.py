@@ -178,12 +178,15 @@ class Lookup(Base):
 
 
 class Worker(Base):
-    """作業員マスタ。cells は見出し付きの 1 行（{見出し: 値}、GAS が読む形）。4-4-a は見出しの文字で読む。"""
+    """作業員マスタ。cells は 1 行の [[見出し, 値], …]（シートの列の順のまま。同じ見出しの列も残す）。
+
+    JSONB のオブジェクトはキーの順を保たないので dict にしない。4-4-a は見出しの文字で読む（同じ見出しは前の列）。
+    """
 
     __tablename__ = "workers"
 
     sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    cells: Mapped[dict] = _cell_kinds()
+    cells: Mapped[list] = _cells()
 
 
 class CalendarDay(Base):
@@ -194,7 +197,7 @@ class CalendarDay(Base):
     sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     date: Mapped[_Date | None] = _date_null()  # 日付のセルを JST の日付にした値（読めない行は NULL）
     kubun: Mapped[str] = _text()  # 区分（normalize_gas 済み。休日・祝日・出勤土曜）
-    cells: Mapped[dict] = _cell_kinds()  # 見出し付きの 1 行
+    cells: Mapped[list] = _cells()  # 1 行の [[見出し, 値], …]（workers と同じ形）
 
 
 class Stamp(Base):

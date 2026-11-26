@@ -178,6 +178,10 @@ def test_no_auth_titles_and_messages_are_the_gas_ones():
 @pytest.mark.parametrize("value,expected", [
     ("LV-20261126-001", "LV-20261126-001"),
     ("LV-20261126-1", ""),
+    ("LV-20261126-1000", "LV-20261126-1000"),  # その日に 1000 件を超えた 4 桁の連番も開ける
+    ("LV-20261126-0001", "LV-20261126-0001"),
+    ("LV-2026112-001", ""),
+    ("LV-20261126-001\r", ""),
     ("lv-20261126-001", ""),
     ("LV-２０２６1126-001", ""),
     ("LV-20261126-001 ", ""),
@@ -219,6 +223,15 @@ def test_portal_url_is_normalized_and_may_be_empty(make_client):
     assert data_of(r.text)["PORTAL_URL"] == ""
     # ボタンは今と同じく style="display:none" で出し、JS が PORTAL_URL のあるときだけ見せる
     assert 'id="portalLink" style="display:none;"' in r.text
+
+
+@pytest.mark.parametrize("portal", ["javascript:alert(1)", "http://portal.example/exec", " JAVASCRIPT:x",
+                                    "//portal.example/exec", "data:text/html,x"])
+def test_portal_url_must_be_https(make_client, portal):
+    """https:// で始まらない PORTAL_URL は使わない（ボタンを出さない）。"""
+    r = make_client(STAFF, portal=portal).get("/?page=top")
+    assert data_of(r.text)["PORTAL_URL"] == ""
+    assert 'href="" target="_top" class="portal-link" id="portalLink"' in r.text
 
 
 def test_url_values_are_escaped_in_attributes(make_client):

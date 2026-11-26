@@ -16,7 +16,9 @@ kind ごとの実行は登録式（担当 M・D が自分のモジュールの r
 - lane='gas' は全体で同時に 1 本（取り出しは 1 件ずつ。動いている gas の仕事があれば取り出さない。
   PostgreSQL では worker が pg_try_advisory_lock でも守る）。priority の高い順、同じなら id 順。
 - 同じ申請（request_id）の仕事は積んだ順。前の仕事が done／skipped になるまで次は動かさない。
-  前の仕事が failed のままなら、同じ申請の次の仕事も止まる（list_blocked で管理者の欄に出す）。
+  前の仕事が failed のときは、後の仕事の種類の failed_blocks（register_kind で渡す）が「頼る」と答えたときだけ止まる
+  （list_blocked で管理者の欄に出す）。failed_blocks を渡さない種類は、前が failed なら止まる（安全な既定）。
+  やり直さない失敗（retryable:false）の仕事が、同じ申請の後の仕事を永久に止めないようにするため。
 - requires（[{table, pk, version}]）の行の反映が済むまで動かさない（試行回数は増やさず 5 秒後に）。
 - 失敗は 1・2・4・8・16・30 分、その後は 30 分ごとに、積んでから 24 時間まで送り直す。
   PermanentJobError と 24 時間を過ぎたものは failed にして on_exhausted を別のトランザクションで呼ぶ。
@@ -92,6 +94,8 @@ class JobContext:
 
 JobHandler = Callable[[JobContext], Any]
 ExhaustedHandler = Callable[[JobContext, str], None]
+# (db, 先に積まれて failed の仕事, 後の仕事) → 後の仕事を止めるか
+FailedBlocksFn = Callable[[Session, "models.Job", "models.Job"], bool]
 
 
 @dataclass
@@ -102,6 +106,7 @@ class JobKind:
     on_exhausted: ExhaustedHandler | None = None
     retry_delays: tuple[timedelta, ...] = DEFAULT_RETRY_DELAYS
     retry_deadline: timedelta = RETRY_DEADLINE
+    failed_blocks: FailedBlocksFn | None = None
 
 
 _kinds: dict[str, JobKind] = {}
@@ -109,15 +114,18 @@ _kinds: dict[str, JobKind] = {}
 
 def register_kind(kind: str, handler: JobHandler, *, lane: str, on_exhausted: ExhaustedHandler | None = None,
                   retry_delays: Sequence[timedelta] | None = None,
-                  retry_deadline: timedelta | None = None) -> None:
-    """kind の実行を差し込む（worker の起動時）。lane は 'gas'／'default'。"""
+                  retry_deadline: timedelta | None = None, failed_blocks: FailedBlocksFn | None = None) -> None:
+    """kind の実行を差し込む（worker の起動時）。lane は 'gas'／'default'。
+
+    failed_blocks: 同じ申請の先の仕事が failed のとき、この種類の仕事を止めるかを決める関数（None なら止める）。
+    """
     if lane not in JOB_LANES:
         raise ValueError(f"知らないレーンです: {lane}")
     if not kind:
         raise ValueError("kind が空です")
     _kinds[kind] = JobKind(kind=kind, lane=lane, handler=handler, on_exhausted=on_exhausted,
                            retry_delays=tuple(retry_delays) if retry_delays else DEFAULT_RETRY_DELAYS,
-                           retry_deadline=retry_deadline or RETRY_DEADLINE)
+                           retry_deadline=retry_deadline or RETRY_DEADLINE, failed_blocks=failed_blocks)
 
 
 def unregister_all() -> None:
@@ -207,16 +215,40 @@ def list_failed(db: Session, lane: str | None = None) -> list[dict]:
     return list_jobs(db, ("failed",), lane)
 
 
+def _failed_blocks(db: Session, failed: models.Job, later: models.Job) -> bool:
+    spec = _kinds.get(later.kind)
+    fn = spec.failed_blocks if spec is not None else None
+    return True if fn is None else bool(fn(db, failed, later))
+
+
+def _earlier_unfinished(db: Session, job: models.Job) -> list[models.Job]:
+    J = models.Job
+    return list(db.scalars(select(J).where(J.request_id == job.request_id, J.id < job.id,
+                                           J.state.notin_(DONE_STATES)).order_by(J.id)))
+
+
+def blocked_by_earlier(db: Session, job: models.Job) -> bool:
+    """同じ申請の先の仕事のために、この仕事をまだ動かさないか。
+
+    先の仕事が pending・running なら待つ（積んだ順）。failed なら、後の仕事の種類の failed_blocks が決める。
+    """
+    if not job.request_id:
+        return False
+    earlier = _earlier_unfinished(db, job)
+    if any(e.state != "failed" for e in earlier):
+        return True
+    return any(_failed_blocks(db, e, job) for e in earlier)
+
+
 def list_blocked(db: Session) -> list[dict]:
-    """前の仕事が failed のため止まっている仕事（同じ申請の後の仕事）。"""
+    """前の仕事が failed のため止まっている仕事（同じ申請の後の仕事。failed_blocks が止めると決めたものだけ）。"""
     J = models.Job
     failed = select(J.request_id).where(J.state == "failed", J.request_id != "")
     rows = db.scalars(select(J).where(J.state == "pending", J.request_id.in_(failed)).order_by(J.id)).all()
     out = []
     for r in rows:
-        earlier = db.scalar(select(func.count()).select_from(J).where(
-            J.request_id == r.request_id, J.state == "failed", J.id < r.id)) or 0
-        if earlier:
+        earlier_failed = [e for e in _earlier_unfinished(db, r) if e.state == "failed"]
+        if any(_failed_blocks(db, e, r) for e in earlier_failed):
             out.append(_job_dict(r))
     return out
 
@@ -314,10 +346,9 @@ class JobRunner:
                 if job.request_id:
                     if job.request_id in taken:
                         continue
-                    # 同じ申請の、先に積まれてまだ done／skipped でない仕事があれば後回し（積んだ順・前が failed なら止まる）
-                    earlier = s.scalar(select(func.count()).select_from(J).where(
-                        J.request_id == job.request_id, J.id < job.id, J.state.notin_(DONE_STATES))) or 0
-                    if earlier:
+                    # 同じ申請の、先に積まれてまだ done／skipped でない仕事があれば後回し（積んだ順）。
+                    # 先が failed なら、この仕事の種類の failed_blocks が「頼る」と答えたときだけ止まる
+                    if blocked_by_earlier(s, job):
                         continue
                 requires = _loads(job.requires_json, [])
                 if requires and not _requires_met(s, requires):

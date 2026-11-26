@@ -1,6 +1,8 @@
 """部署・作業員・LOOKUP・電子印・権限の関数（実装仕様 4-3 の 1〜8・17・19・23、4-4-a・g）。"""
 from __future__ import annotations
 
+import json
+
 import pytest
 from test_domain_helpers import (
     ADMIN,
@@ -37,16 +39,41 @@ def test_active_flag_and_numbers(db):
     for i, cells in enumerate([{"作業員ID": 101, "氏名": "甲", "部署ID": "A", "在籍フラグ": "TRUE"},
                                {"作業員ID": 102, "氏名": "乙", "部署ID": "A", "在籍フラグ": "0"},
                                {"作業員ID": 103, "氏名": "丙", "部署ID": "A", "在籍フラグ": ""}], start=1):
-        db.add(Worker(sort_order=i, cells=cells))
+        db.add(Worker(sort_order=i, cells=[[h, v] for h, v in cells.items()]))
     db.commit()
     assert [w["workerId"] for w in masters.api_getWorkersByDept(ctx(db), "A")] == ["101", "103"]
 
 
+def _like_jsonb(value):
+    """PostgreSQL の JSONB のまね: オブジェクトのキーの順を保たない（ここでは並べ替える）。配列の順は保つ。"""
+    return json.loads(json.dumps(value, sort_keys=True))
+
+
 def test_worker_header_error(db):
-    db.add(Worker(sort_order=1, cells={"コード": "1", "氏名": "甲"}))
+    db.add(Worker(sort_order=1, cells=_like_jsonb([["コード", "1"], ["氏名", "甲"]])))
     db.commit()
     with pytest.raises(RpcError, match="^作業員マスタのヘッダが想定と違います（作業員コード/氏名/部署）。実際: コード, 氏名$"):
         masters.api_getDeptList(ctx(db))
+
+
+def test_worker_header_order_survives_db_that_reorders_keys(db):
+    """見出しの並び（シートの列の順）は、キーの順を保たない DB を通っても変わらない。"""
+    # dict で持っていた頃は {"氏名", "コード"} がキーの並べ替えで「コード, 氏名」に変わった
+    assert list(_like_jsonb({"氏名": "甲", "コード": "1"})) == ["コード", "氏名"]
+    db.add(Worker(sort_order=1, cells=_like_jsonb([["氏名", "甲"], ["コード", "1"]])))
+    db.commit()
+    with pytest.raises(RpcError, match="実際: 氏名, コード$"):
+        masters.api_getDeptList(ctx(db))
+
+
+def test_worker_duplicate_header_reads_left_column(db):
+    """同じ見出しの列が 2 つあれば、GAS の indexOf と同じく前（左）の列を読む。"""
+    cols = [["作業員コード", "101"], ["氏名", "甲"], ["部署", "製造1課"], ["部署", "品質"], ["氏名", "乙"]]
+    db.add(Worker(sort_order=1, cells=_like_jsonb(cols)))
+    db.commit()
+    assert masters.api_getWorkersByDept(ctx(db), "製造1課") == [
+        {"workerId": "101", "workerName": "甲", "deptId": "製造1課"}]
+    assert masters.api_getWorkersByDept(ctx(db), "品質") == []
 
 
 def test_worker_info(db):

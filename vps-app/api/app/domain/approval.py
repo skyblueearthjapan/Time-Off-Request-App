@@ -23,7 +23,13 @@ from .masters import stamp_name
 from .requests import _sorted_by
 
 ERR_NO_PERMISSION = "権限がありません（総務または管理者のみ）"
+ERR_BAD_APPROVER_EMAIL = "承認者のメールアドレスが正しくありません。"
+ERR_BAD_SIGN = "サイン画像の形式が正しくありません。"
 _DATA_URL_PREFIX = re.compile(r"^data:image/\w+;base64,")
+_EMAIL_SHAPE = re.compile(r"[^@\s]+@[^@\s]+\Z")
+APPROVER_EMAIL_MAX = 256
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+SIGN_MAX_SIDE = 4000
 
 
 def _require_somu_or_admin(ctx: RpcContext) -> None:
@@ -52,6 +58,32 @@ def decode_sign(sign_base64) -> bytes | None:
     return data or None
 
 
+def check_approver_email(approver_email) -> None:
+    """1 次承認の承認者のメール（画面は電子印を選ぶと M_STAMP のメールを渡す）。空か、文字で 256 字以下のメールの形。"""
+    if approver_email is None or approver_email == "":
+        return
+    if (not isinstance(approver_email, str) or len(approver_email) > APPROVER_EMAIL_MAX
+            or not _EMAIL_SHAPE.match(approver_email)):
+        raise RpcError(ERR_BAD_APPROVER_EMAIL)
+
+
+def check_sign_png(data: bytes | None) -> None:
+    """手書きサインの PNG を確かめる（解いた後で quirks.SIGN_MAX_BYTES 以下、PNG の頭、IHDR の縦横が 1〜4000）。
+
+    読めない base64 は今と同じく None（GAS も URL 空で続ける）なので、ここでは見ない。
+    """
+    if data is None:
+        return
+    if len(data) > quirks.SIGN_MAX_BYTES:
+        raise RpcError(ERR_BAD_SIGN)
+    # PNG の頭（8 バイト）→ IHDR の塊（長さ 4・"IHDR" 4・幅 4・高さ 4）
+    if len(data) < 24 or not data.startswith(PNG_SIGNATURE) or data[12:16] != b"IHDR":
+        raise RpcError(ERR_BAD_SIGN)
+    width, height = int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+    if not (1 <= width <= SIGN_MAX_SIDE and 1 <= height <= SIGN_MAX_SIDE):
+        raise RpcError(ERR_BAD_SIGN)
+
+
 def _approved_at2_set(row) -> bool:
     """2 次承認日時が空でない（Date のセルか、文字を trim して空でない）。"""
     return store.date_cell(row, "approved_at2") is not None or js_trim(store.text_cell(row, "approved_at2")) != ""
@@ -72,12 +104,15 @@ def api_approveLeaveRequest(ctx: RpcContext, req_id=None, sign_base64=None, appr
         raise RpcError("この申請は取消済みです。")
     if isinstance(sign_base64, str) and len(sign_base64) > quirks.SIGN_MAX_CHARS:
         raise RpcError("サイン画像が大きすぎます。")
+    check_approver_email(approver_email)
+    sign_png = decode_sign(sign_base64) if js_truthy(sign_base64) else None
+    check_sign_png(sign_png)
 
     row.status = STATUS_APPROVED
-    store.set_date(row, "approved_at", store.ms(ctx.now))
+    store.set_date(row, "approved_at", store.seconds(ctx.now))
     store.set_text(row, "approved_by1_email", approver_email if js_truthy(approver_email) else "")
     row.sign_image_url = ""  # シートは GAS が URL か空を書く
-    row.sign_png = decode_sign(sign_base64) if js_truthy(sign_base64) else None
+    row.sign_png = sign_png
     store.mark(db, row.req_id)
     adapters.enqueue_after_approve1(db, row.req_id)
     adapters.summary_mark_dirty(db)
@@ -141,7 +176,7 @@ def api_approveLeaveRequest2(ctx: RpcContext, req_id=None, approver2_email=None)
             pass
     store.set_text(row, "approved_by2", name)
     store.set_text(row, "approved_by2_email", email if email is not None else "")
-    store.set_date(row, "approved_at2", store.ms(ctx.now))
+    store.set_date(row, "approved_at2", store.seconds(ctx.now))
     store.mark(db, row.req_id)
     adapters.enqueue_after_approve2(db, row.req_id)
     return {"ok": True, "reqId": req_id}

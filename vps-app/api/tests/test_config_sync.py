@@ -24,10 +24,10 @@ def test_imports_six_tabs_read_only(db, settings):
     assert db.get(Setting, "SOMU_EMAILS").value == "somu@lineworks-local.info"
     assert [lk.value for lk in db.scalars(select(Lookup).order_by(Lookup.sheet_row))] == ["結婚休暇", "忌引休暇"]
     w = db.get(Worker, 1)
-    assert w.cells == {"作業員コード": 1001, "氏名": "試験 一郎", "部署": "機械加工", "担当業務": "旋盤", "拠点": "本社",
-                       "スタッフ種類": "社員"}
+    assert w.cells == [["作業員コード", 1001], ["氏名", "試験 一郎"], ["部署", "機械加工"], ["担当業務", "旋盤"],
+                       ["拠点", "本社"], ["スタッフ種類", "社員"]]
     cal = db.get(CalendarDay, 1)
-    assert cal.date == date(2026, 11, 28) and cal.kubun == "休日" and cal.cells["曜日"] == "Sat"
+    assert cal.date == date(2026, 11, 28) and cal.kubun == "休日" and dict(cal.cells)["曜日"] == "Sat"
     assert (db.get(Stamp, 1).col_a, db.get(Stamp, 1).col_b) == ("somu@lineworks-local.info", "stamp-1")
     assert db.get(DeptApprover, 1).col_c == "上長 太郎"
     assert result["mismatches"] == []
@@ -61,6 +61,15 @@ def test_empty_or_missing_tabs_keep_current_rows(db, settings):
     assert "M_STAMP" in result["skipped"] and "M_LOOKUP" in result["skipped"]
     assert db.get(Stamp, 1).col_a == "somu@lineworks-local.info"
     assert db.scalars(select(Lookup)).first() is not None
+
+
+def test_workers_keep_sheet_column_order_and_duplicate_headers():
+    """作業員マスタは列の順のまま [[見出し, 値], …] で持つ（同じ見出し・見出しの無い列も残す）。"""
+    u = [["氏名", "作業員コード", "部署", "", "部署"], ["甲", 101, "製造1課", "メモ", "品質"], ["乙", 102]]
+    rows, valid = config_sync.build_rows("作業員マスタ", u, [], "Asia/Tokyo")
+    assert rows[0]["cells"] == [["氏名", "甲"], ["作業員コード", 101], ["部署", "製造1課"], ["", "メモ"], ["部署", "品質"]]
+    assert rows[1]["cells"] == [["氏名", "乙"], ["作業員コード", 102], ["部署", ""], ["", ""], ["部署", ""]]
+    assert valid == 2
 
 
 def test_register_worker(settings):

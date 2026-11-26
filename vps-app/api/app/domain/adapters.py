@@ -23,16 +23,19 @@ from app.rpc import RpcError
 
 
 def worker_sheet(db: Session) -> list[list[Any]]:
-    """作業員マスタの getDataRange().getValues()（1 行目が見出し。行が無ければ []）。"""
+    """作業員マスタの getDataRange().getValues()（1 行目が見出し。行が無ければ []）。
+
+    cells は [[見出し, 値], …] の配列（列の順のまま）。見出しの並びはいちばん長い行のものを使う
+    （同じタブから取り込むので、どの行も同じ見出し）。同じ見出しが 2 つあっても両方の列を残し、
+    読む側（masters._header_index）が GAS の indexOf と同じく前の列を使う。
+    """
     rows = list(db.scalars(select(models.Worker).order_by(models.Worker.sort_order)))
     if not rows:
         return []
-    headers: list[str] = []
-    for r in rows:
-        for h in (r.cells or {}):
-            if h not in headers:
-                headers.append(h)
-    return [list(headers)] + [[(r.cells or {}).get(h, "") for h in headers] for r in rows]
+    pairs = [list(r.cells or []) for r in rows]
+    width = max(len(p) for p in pairs)
+    headers = [h for h, _v in max(pairs, key=len)]
+    return [headers] + [[p[i][1] if i < len(p) else "" for i in range(width)] for p in pairs]
 
 
 def calendar_entries(db: Session) -> list[tuple[Any, str]]:

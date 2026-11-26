@@ -543,8 +543,9 @@ def test_retry_gives_up_after_24_hours(session_factory, db, clock, gas):
 
 
 def test_same_request_runs_in_order_and_failed_blocks(session_factory, db, clock, gas):
+    """1 次承認の仕事がサインの段の前で失敗した（sign_png が残る）なら、2 次承認の PDF は止まる（PDF に頼る段）。"""
     ping_ok(db)
-    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2)
+    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2, sign_png=PNG)
     add_request(db, "LV-20261126-009", worker_id="3003")
     gas.replies["internal.afterApprove1"] = {"ok": False, "error": "bad_request", "retryable": False}
     first = gas_jobs.enqueue_after_approve1(db, "LV-20261126-001")
@@ -559,6 +560,114 @@ def test_same_request_runs_in_order_and_failed_blocks(session_factory, db, clock
     assert job(db, other).state == "done"  # 別の申請は進む
     assert [c["reqId"] for c in gas.calls] == ["LV-20261126-001", "LV-20261126-009"]
     assert [j["id"] for j in jobs.list_blocked(db)] == [second]
+    # 運用の欄から 1 次承認をやり直して済めば、2 次承認も進む
+    gas.replies["internal.afterApprove1"] = {"ok": True, "sign": {"status": "saved", "signImageUrl": "https://s/1"}}
+    assert jobs.retry_failed(db, first) is True
+    db.commit()
+    run(session_factory, clock)
+    run(session_factory, clock)
+    assert job(db, first).state == "done" and job(db, second).state == "done"
+
+
+def test_failed_approve1_after_sign_does_not_block_approve2(session_factory, db, clock, gas):
+    """やり直さない失敗（retryable:false）でも、サインの段が済んでいれば 2 次承認の PDF は永久には止まらない。"""
+    ping_ok(db)
+    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2, sign_png=PNG)
+    gas.replies["internal.afterApprove1"] = {"ok": False, "error": "bad_request", "retryable": False,
+                                             "sign": {"status": "saved", "signImageUrl": "https://s/9"}}
+    first = gas_jobs.enqueue_after_approve1(db, "LV-20261126-001")
+    second = gas_jobs.enqueue_after_approve2(db, "LV-20261126-001")
+    db.commit()
+    run(session_factory, clock)
+    assert job(db, first).state == "failed" and req(db, "LV-20261126-001").sign_png is None
+    run(session_factory, clock)
+    assert job(db, second).state == "done"
+    assert jobs.list_blocked(db) == []
+    # failed の仕事は運用の欄に出たままで、再実行できる
+    from app.services import ops_status
+
+    st = ops_status.get_ops_status(db)
+    assert [j["id"] for j in st["gasJobs"]["failed"]] == [first]
+    assert jobs.retry_failed(db, first) is True
+
+
+def test_electronic_stamp_failed_approve1_does_not_block_approve2(session_factory, db, clock, gas):
+    ping_ok(db)
+    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2)  # 電子印（sign_png なし）
+    gas.replies["internal.afterApprove1"] = {"ok": False, "error": "bad_request", "retryable": False}
+    first = gas_jobs.enqueue_after_approve1(db, "LV-20261126-001")
+    second = gas_jobs.enqueue_after_approve2(db, "LV-20261126-001")
+    db.commit()
+    run(session_factory, clock)
+    run(session_factory, clock)
+    assert job(db, first).state == "failed" and job(db, second).state == "done"
+
+
+def test_failed_unapprove_blocks_later_jobs(session_factory, db, clock, gas):
+    """取消・編集の後処理（台帳の行を消す・サインを空に）が失敗したら、同じ申請の後の仕事は止める（順番が要る）。"""
+    ping_ok(db)
+    add_request(db, "LV-20261126-001", status="申請中")
+    gas.replies["internal.afterUnapprove"] = {"ok": False, "error": "bad_request", "retryable": False}
+    first = gas_jobs.enqueue_after_unapprove(db, "LV-20261126-001", reason="edit", old_leave_date="2026-11-27",
+                                             old_pdf_url="", old_pdf_file_id="", clear_sign=True)
+    r = req(db, "LV-20261126-001")
+    r.status = "承認済"
+    db.commit()
+    second = gas_jobs.enqueue_after_approve1(db, "LV-20261126-001")
+    db.commit()
+    run(session_factory, clock)
+    run(session_factory, clock)
+    assert job(db, first).state == "failed" and job(db, second).state == "pending"
+    assert [j["id"] for j in jobs.list_blocked(db)] == [second]
+
+
+def test_failed_approve2_does_not_block_later_unapprove_and_retry_is_skipped(session_factory, db, clock, gas):
+    """2 次承認の後処理が失敗しても取消の後処理は進む。古い仕事を後で再実行しても guard で skipped（上書きしない）。"""
+    ping_ok(db)
+    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2)
+    gas.replies["internal.afterApprove2"] = {"ok": False, "error": "bad_request", "retryable": False}
+    first = gas_jobs.enqueue_after_approve2(db, "LV-20261126-001")
+    db.commit()
+    run(session_factory, clock)
+    assert job(db, first).state == "failed"
+    r = req(db, "LV-20261126-001")
+    r.status = "取消"
+    db.commit()
+    second = gas_jobs.enqueue_after_unapprove(db, "LV-20261126-001", reason="cancel", old_leave_date="2026-11-27",
+                                              old_pdf_url="", old_pdf_file_id="", clear_sign=False)
+    db.commit()
+    run(session_factory, clock)
+    assert job(db, second).state == "done"
+    assert jobs.retry_failed(db, first) is True
+    db.commit()
+    run(session_factory, clock)
+    assert job(db, first).state == "skipped"
+    assert [c["action"] for c in gas.calls] == ["internal.afterApprove2", "internal.afterUnapprove"]
+
+
+@pytest.mark.parametrize("step", ["ledger", "mail", "sign", "trash"])
+def test_partial_step_error_is_done_and_listed(session_factory, db, clock, gas, step):
+    """ok:true のまま段が status:'error'（台帳だけの失敗など）: 仕事は done、result_json と運用の欄に残す。"""
+    from app.services import ops_status
+
+    ping_ok(db)
+    add_request(db, "LV-20261126-001", approved_at2=APPROVED_AT2)
+    reply = {"ok": True, "sign": {"status": "cleared", "signImageUrl": ""}, "mail": {"status": "sent"},
+             "ledger": {"status": "upserted"}}
+    reply[step] = {"status": "error", "error": "ledger_unavailable", "message": "LEDGER_SSID is not set"}
+    gas.replies["internal.afterApprove1"] = reply
+    first = gas_jobs.enqueue_after_approve1(db, "LV-20261126-001")
+    second = gas_jobs.enqueue_after_approve2(db, "LV-20261126-001")
+    db.commit()
+    run(session_factory, clock)
+    run(session_factory, clock)
+    assert job(db, first).state == "done" and job(db, second).state == "done"  # 後の仕事は止めない
+    assert json.loads(job(db, first).result_json)["partialErrors"] == [
+        {"step": step, "error": "ledger_unavailable", "message": "LEDGER_SSID is not set"}]
+    partial = ops_status.get_ops_status(db)["gasJobs"]["partial"]
+    assert [(p["id"], p["reqId"], p["action"]) for p in partial] == [(first, "LV-20261126-001", "internal.afterApprove1")]
+    assert partial[0]["errors"][0]["step"] == step
+    assert "partialErrors" not in (job(db, second).result_json or "")
 
 
 def test_missing_request_is_skipped(session_factory, db, clock, gas):

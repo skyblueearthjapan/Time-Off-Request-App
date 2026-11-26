@@ -32,9 +32,13 @@ def gas_url(deployment: str) -> str:
     return f"https://script.google.com/macros/s/{deployment}/exec"
 
 
+PROD_TEST_DEPLOY = "AKfycbTESTprodInternal0123456789abcdefXYZ"
+
+
 def prod_settings(**overrides):
     values = {"app_env": "production", "staging_spreadsheet_id": "", "staging_pdf_folder_id": "",
-              "staging_ledger_spreadsheet_id": "", "gas_internal_url": gas_url("AKfycbTESTprodInternal")}
+              "staging_ledger_spreadsheet_id": "", "gas_internal_url": gas_url(PROD_TEST_DEPLOY),
+              "prod_gas_internal_deployment_id": PROD_TEST_DEPLOY}
     values.update(overrides)
     return make_settings(**values)
 
@@ -46,7 +50,7 @@ def prod_settings(**overrides):
     "app_env", "database_url", "public_origin", "google_oauth_client_id", "google_oauth_client_secret",
     "session_secret", "allowed_domain", "bootstrap_admins", "fernet_key", "delegate_email", "prod_spreadsheet_id",
     "master_source_spreadsheet_id", "calendar_source_spreadsheet_id", "prod_pdf_folder_id",
-    "prod_ledger_spreadsheet_id", "gas_internal_url", "gas_internal_token", "db_sheet_timezone",
+    "prod_ledger_spreadsheet_id", "gas_internal_url", "db_sheet_timezone",
 ])
 def test_missing_required_value_refuses_to_start(key, monkeypatch):
     monkeypatch.delenv(key.upper(), raising=False)
@@ -485,6 +489,39 @@ def test_prod_internal_deployment_id_must_match_in_production(monkeypatch):
         config.Settings(_env_file=None, **_prod_values(
             prod_gas_internal_deployment_id=PROD_INTERNAL,
             gas_internal_url="https://script.google.com/macros/s/AKfycbOTHERdeployment0123456789abcdefgh/exec"))
+
+
+def test_production_requires_prod_internal_deployment_id(monkeypatch):
+    for k in ("APP_ENV", "GAS_INTERNAL_URL", "PROD_GAS_INTERNAL_DEPLOYMENT_ID"):
+        monkeypatch.delenv(k, raising=False)
+    with pytest.raises(ValidationError, match="PROD_GAS_INTERNAL_DEPLOYMENT_ID"):
+        config.Settings(_env_file=None, **_prod_values())
+    with pytest.raises(ValidationError, match="PROD_GAS_INTERNAL_DEPLOYMENT_ID"):
+        prod_settings(prod_gas_internal_deployment_id="")
+    assert make_settings(prod_gas_internal_deployment_id="").is_staging  # ステージングは空でよい
+
+
+def test_gas_internal_token_is_optional_for_api_but_required_by_worker(monkeypatch):
+    from app import worker
+
+    monkeypatch.delenv("GAS_INTERNAL_TOKEN", raising=False)
+    s = make_settings(gas_internal_token="")
+    assert s.gas_internal_token == ""  # api は合言葉なしで起動する（compose は worker だけに渡す）
+    with pytest.raises(RuntimeError, match="GAS_INTERNAL_TOKEN"):
+        worker.require_gas_token(s)
+    worker.require_gas_token(make_settings())
+
+
+def test_compose_passes_gas_token_to_worker_only():
+    compose = (Path(__file__).resolve().parents[2] / "docker-compose.yml")
+    if not compose.exists():
+        pytest.skip("リポジトリの外（イメージの中）では確かめない")
+    text = compose.read_text(encoding="utf-8")
+    anchor = text.split("x-api-env:", 1)[1].split("\nservices:", 1)[0]
+    worker_block = text.split("\n  worker:", 1)[1].split("\n  web:", 1)[0]
+    api_block = text.split("\n  api:", 1)[1].split("\n  worker:", 1)[0]
+    assert "GAS_INTERNAL_TOKEN" not in anchor and "GAS_INTERNAL_TOKEN" not in api_block
+    assert "GAS_INTERNAL_TOKEN: ${GAS_INTERNAL_TOKEN}" in worker_block and "<<: *api-env" in worker_block
 
 
 def test_staging_refuses_the_configured_prod_internal_deployment():

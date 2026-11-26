@@ -17,3 +17,6 @@ jinja2==3.1.6
 google-auth==2.37.0
 requests==2.34.2
 tzdata==2024.2
+# localeCompare（'ja' と既定）を GAS（V8 の ICU）と同じ照合で行う。ソースからビルドするので、Dockerfile の
+# build の段に libicu-dev・pkg-config・g++ が要る（実行の段は libicu72 だけ）。本番は無ければ起動しない。
+PyICU==2.14

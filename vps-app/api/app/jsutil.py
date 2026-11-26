@@ -140,14 +140,35 @@ def sheet_readback(text: Any) -> tuple[str, str]:
 # collate_default(a, b) = a.localeCompare(b)（言語の指定なし＝ICU の既定の照合。en_US とみなす）
 # collate_ja(a, b)      = a.localeCompare(b, 'ja')
 # 戻り値は -1・0・1。並べ替えは functools.cmp_to_key(collate_default) で使う。
-# PyICU があればそれを使う。無い環境では近い並び（_fallback_key）で代える（記号 < 数字 < ラテン文字（大小を区別しない、
-# 同じなら小文字が先）< ほかの文字 < かな（ひらがなとカタカナは同じ、同じならひらがなが先）< 漢字（符号順））。
+# PyICU（V8 と同じ ICU の照合）を使う。本番のイメージには入れ、APP_ENV=production で読み込めなければ起動しない
+# （require_icu）。手元の試験など PyICU が無い環境では近い並び（_fallback_key）で代える（記号 < 数字 < ラテン文字
+# （大小を区別しない、同じなら小文字が先）< ほかの文字 < かな（ひらがなとカタカナは同じ、同じならひらがなが先）
+# < 漢字（符号順。ICU の ja は JIS X 0208 の順＝おおむね読みの順なので、ここが ICU と違う））。
 
 
-def _icu_collator(locale: str):
+def _icu_module():
     try:
         import icu  # type: ignore[import-not-found]
     except ImportError:
+        return None
+    return icu
+
+
+def icu_version() -> str | None:
+    """読み込めた ICU の版（無ければ None）。/healthz?detail=1 に出す。"""
+    icu = _icu_module()
+    return None if icu is None else str(icu.ICU_VERSION)
+
+
+def require_icu(app_env: str) -> None:
+    """APP_ENV=production で PyICU が読み込めなければ起動を止める（並びが GAS と変わるのを防ぐ）。"""
+    if app_env == "production" and icu_version() is None:
+        raise RuntimeError("PyICU（ICU の照合）が読み込めません。本番は ICU なしでは起動しません")
+
+
+def _icu_collator(locale: str):
+    icu = _icu_module()
+    if icu is None:
         return None
     return icu.Collator.createInstance(icu.Locale(locale))
 

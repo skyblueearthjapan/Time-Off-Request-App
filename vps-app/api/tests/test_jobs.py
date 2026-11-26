@@ -171,6 +171,35 @@ def test_failed_previous_job_blocks_same_request(session_factory, db, clock):
     assert jobs.retry_failed(db, first) is False  # failed でなければ戻さない
 
 
+def test_failed_blocks_hook_decides_whether_later_job_waits(session_factory, db, clock):
+    """failed_blocks を渡した種類は、先の仕事が failed でも「頼らない」と答えれば進む（ほかの状態は待つ）。"""
+    ran, asked = [], []
+
+    def fail(ctx):
+        raise PermanentJobError("bad_request")
+
+    def blocks(db_, failed, later):
+        asked.append((failed.kind, later.kind))
+        return failed.kind == "internal.afterUnapprove"
+
+    jobs.register_kind("internal.afterApprove1", fail, lane="gas")
+    jobs.register_kind("internal.afterUnapprove", fail, lane="gas")
+    jobs.register_kind("internal.afterApprove2", lambda ctx: ran.append(ctx.request_id), lane="gas",
+                       failed_blocks=blocks)
+    a1 = enqueue(session_factory, "internal.afterApprove1", request_id="R1")
+    a2 = enqueue(session_factory, "internal.afterApprove2", request_id="R1")
+    u = enqueue(session_factory, "internal.afterUnapprove", request_id="R2")
+    b2 = enqueue(session_factory, "internal.afterApprove2", request_id="R2")
+    r = runner(session_factory, clock)
+    for _ in range(5):
+        r.run_once()
+    assert job(db, a1).state == "failed" and job(db, a2).state == "done"
+    assert job(db, u).state == "failed" and job(db, b2).state == "pending"
+    assert ran == ["R1"]
+    assert [j["id"] for j in jobs.list_blocked(db)] == [b2]
+    assert ("internal.afterApprove1", "internal.afterApprove2") in asked
+
+
 def test_skipped_previous_job_lets_next_run(session_factory, db, clock):
     def skip(ctx):
         raise SkipJob("canceled")

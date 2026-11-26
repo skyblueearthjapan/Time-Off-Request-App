@@ -7,7 +7,9 @@
 
 安全の決まり:
   - 書き先はこの環境の DB スプレッドシートだけ（safety.assert_restore_target）。控えの ID と同じ・許可リストの外は止める。
-  - 控えは名前が「【切替前の控え】休暇届 DB」で始まるスプレッドシートだけ（台帳の控えや別のファイルを拒む）。
+  - 控えは名前が「【切替前の控え】[<環境>] 休暇届 DB」で始まるスプレッドシートだけ（台帳の控えや別のファイルを拒む）。
+    名前の環境が今の APP_ENV と違えば止める（本番にステージングの控えを戻さない）。本番では、ステージングの資源の ID
+    （config の STAGING_*_KNOWN と .env の STAGING_*）を --from-copy に渡しても止める。
   - タブは --tabs に名前を書いたものだけ。`all` は T_LEAVE_REQUEST・V_LEAVE_SUMMARY・マスタ 4 タブ。
     M_SYSTEM_SETTING・M_LOOKUP は `all` に入らず、名前を書いたときだけ戻す。ほかのタブは書かない。
   - T_LEAVE_REQUEST は V 列だけを、見出しの文字で列を引いて戻す。G 列（SIGN_IMAGE_URL・PDF_URL）と N 列は戻さない
@@ -35,12 +37,32 @@ from app.jsutil import normalize_gas  # noqa: E402
 from app.services import sheet_codec as codec  # noqa: E402
 from app.services.sheets_api import API_BASE, column_letter, quote_sheet, sheet_titles  # noqa: E402
 
-BACKUP_DB_PREFIX = "【切替前の控え】休暇届 DB"
+BACKUP_DB_PREFIX = "【切替前の控え】[{env}] 休暇届 DB"
 ALL_TABS = ("T_LEAVE_REQUEST", "V_LEAVE_SUMMARY", "作業員マスタ", "M_CALENDAR", "M_STAMP", "M_DEPT_APPROVERS")
 
 
 class RestoreStop(RuntimeError):
     """戻しを止める理由。"""
+
+
+def staging_ids(settings: Any) -> frozenset[str]:
+    """ステージングの資源の ID（config の既知の値と .env の STAGING_*）。"""
+    from app import config as _config
+
+    ids = set(_config.KNOWN_STAGING_IDS) | {settings.staging_spreadsheet_id, settings.staging_ledger_spreadsheet_id,
+                                            settings.staging_pdf_folder_id}
+    return frozenset(i for i in ids if i)
+
+
+def check_backup_title(title: str, app_env: str) -> None:
+    """控えの名前が「【切替前の控え】[<今の APP_ENV>] 休暇届 DB」で始まるか（環境の違う控え・旧い名前は止める）。"""
+    want = BACKUP_DB_PREFIX.format(env=app_env)
+    if title.startswith(want):
+        return
+    for env in ("staging", "production"):
+        if env != app_env and title.startswith(BACKUP_DB_PREFIX.format(env=env)):
+            raise RestoreStop(f"控えの環境（{env}）が今の APP_ENV（{app_env}）と違います")
+    raise RestoreStop(f"控えの名前が「{want}」で始まりません")
 
 
 def parse_tabs(text: str) -> tuple[list[str], set[str]]:
@@ -194,6 +216,8 @@ def run(api: Any, settings: Any, copy_id: str, tabs_arg: str, *, apply: bool,
         raise RestoreStop("--from-copy が空です")
     if copy_id == target_id or copy_id in safety.never_writable_ids(settings):
         raise RestoreStop("--from-copy に DB・台帳・マスタ元そのものは使えません（控えの ID を渡す）")
+    if not settings.is_staging and copy_id in staging_ids(settings):
+        raise RestoreStop("本番では、ステージングの資源の ID は --from-copy に使えません")
     for tab in tabs:
         try:
             safety.assert_restore_target(target_id, tab, settings, protected_listed=tab in explicit)
@@ -201,8 +225,7 @@ def run(api: Any, settings: Any, copy_id: str, tabs_arg: str, *, apply: bool,
             raise RestoreStop(str(error)) from error
     copy_meta = api.get_spreadsheet(copy_id)
     title = str((copy_meta.get("properties") or {}).get("title") or "")
-    if not title.startswith(BACKUP_DB_PREFIX):
-        raise RestoreStop(f"控えの名前が「{BACKUP_DB_PREFIX}」で始まりません")
+    check_backup_title(title, settings.app_env)
     target_meta = api.get_spreadsheet(target_id)
     missing = [t for t in tabs if t not in set(sheet_titles(copy_meta)) or t not in set(sheet_titles(target_meta))]
     if missing:

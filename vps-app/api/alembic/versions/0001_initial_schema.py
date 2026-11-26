@@ -38,7 +38,7 @@ def upgrade() -> None:
     sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
     sa.Column('date', sa.Date(), nullable=True),
     sa.Column('kubun', sa.Text(), server_default='', nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='{}', nullable=False),
+    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
     sa.PrimaryKeyConstraint('sort_order')
     )
     op.create_table('dept_approvers',
@@ -214,7 +214,7 @@ def upgrade() -> None:
 
     op.create_table('workers',
     sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='{}', nullable=False),
+    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
     sa.PrimaryKeyConstraint('sort_order')
     )
     # ### end Alembic commands ###

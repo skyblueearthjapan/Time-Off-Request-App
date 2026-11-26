@@ -63,7 +63,7 @@ def test_migrates_and_verifies_with_zero_diffs(engine, db, settings):
     assert st.synced_values["__raw__"]["LEAVE_DATE"] == LEAVE_ROWS[0][HEADERS.index("LEAVE_DATE")]
     # 設定とマスタの表
     assert db.get(Setting, "ADMIN_EMAILS").value == "admin@lineworks-local.info"
-    assert [w.cells["氏名"] for w in db.scalars(select(Worker).order_by(Worker.sort_order))] == ["試験 一郎", "試験 二郎"]
+    assert [dict(w.cells)["氏名"] for w in db.scalars(select(Worker).order_by(Worker.sort_order))] == ["試験 一郎", "試験 二郎"]
     assert db.scalars(select(CalendarDay)).first().date == date(2026, 11, 28)
     assert db.get(Stamp, 1).col_c == "総務 花子"
     assert db.get(DeptApprover, 1).col_a == "機械加工"

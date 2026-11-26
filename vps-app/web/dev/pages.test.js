@@ -320,3 +320,34 @@ test('画面が呼ぶ RPC の名前は閉じたリストの 34 関数だけで�
   assert.deepEqual([...used].filter((n) => !SPEC.ALL.includes(n)), [], '閉じたリストに無い関数');
   assert.deepEqual(SPEC.ALL.filter((n) => !used.has(n)), [], '画面から呼ばれない関数');
 });
+
+test('data-on-* の関数名は、テンプレートと JS に出てくる名前と gas-shim.js の一覧（ON_FNS）がちょうど同じ', () => {
+  const used = new Set();
+  const files = PAGES.map((p) => path.join(TPL_DIR, p + '.html')).concat([path.join(TPL_DIR, 'no_auth.html')])
+    .concat(PAGES.map((p) => path.join(JS_DIR, p + '.js')));
+  for (const f of files) {
+    const text = fs.readFileSync(f, 'utf8');
+    for (const m of text.matchAll(/data-on-[a-z]+=\\?"([^"\\]*)/g)) { used.add(m[1]); }
+  }
+  const win = {};
+  vm.createContext(Object.assign(win, { window: win, document: null, setTimeout, location: { search: '' } }));
+  vm.runInContext(SHIM, win, { filename: 'gas-shim.js' });
+  const listed = Array.from(win.__vpsShim.ON_FNS);  // vm の中の配列をこちらの配列に
+  assert.deepEqual([...used].filter((n) => !listed.includes(n)).sort(), [], '一覧に無い名前を画面が使っている');
+  assert.deepEqual(listed.filter((n) => !used.has(n)).sort(), [], '画面が使わない名前が一覧にある');
+  assert.equal(new Set(listed).size, listed.length);
+});
+
+test('CSV の出力: = + - @ で始まる値は頭に \' を付けて式にしない（admin・somuAdmin の csvEsc）', () => {
+  for (const page of ['admin', 'somuAdmin']) {
+    const { win } = loadPage(page);
+    assert.equal(win.csvEsc('=HYPERLINK("x")'), '"\'=HYPERLINK(""x"")"', page);
+    assert.equal(win.csvEsc('+1'), "'+1", page);
+    assert.equal(win.csvEsc('-2+3'), "'-2+3", page);
+    assert.equal(win.csvEsc('@SUM(A1)'), "'@SUM(A1)", page);
+    assert.equal(win.csvEsc('製造1課'), '製造1課', page);
+    assert.equal(win.csvEsc('a,b'), '"a,b"', page);
+    assert.equal(win.csvEsc('2026-11-27'), '2026-11-27', page);
+    assert.equal(win.csvEsc(''), '', page);
+  }
+});

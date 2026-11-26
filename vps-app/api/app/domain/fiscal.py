@@ -19,7 +19,7 @@ from app.jsutil import js_string
 
 from .jsdate import js_local_date, js_new_date
 
-_YMD = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_YMD = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")  # JS の /^\d{4}-\d{2}-\d{2}$/ と同じ（半角の数字だけ、改行を許さない）
 
 
 def _as_date(d: date | datetime) -> date:

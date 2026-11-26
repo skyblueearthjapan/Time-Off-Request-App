@@ -389,6 +389,7 @@ function quarterText(q) {
 
 function csvEsc(s) {
   s = String(s || '');
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
   if (/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
   return s;
 }

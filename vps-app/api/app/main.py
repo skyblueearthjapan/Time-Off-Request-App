@@ -14,7 +14,7 @@ from fastapi.responses import Response
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app import auth, google_delegate, permissions, rpc, safety, timeutil
+from app import auth, google_delegate, jsutil, permissions, rpc, safety, timeutil
 from app.config import Settings, get_settings
 from app.db import get_db
 
@@ -48,6 +48,7 @@ def health_detail(db: Session) -> dict:
                       .limit(1)).first()
     oldest_age = int((now - oldest).total_seconds()) if oldest else 0
     return {
+        "icu": jsutil.icu_version(),  # None なら並び（localeCompare）が ICU でない（本番は起動しない）
         "rowSync": {"pending": int(count), "blocked": int(blocked), "oldestSeconds": oldest_age,
                     "delayed": bool(oldest and now - oldest > SYNC_DELAY_ALERT)},
         "gasPing": None if ping is None else {"at": ping.started_at, "ok": ping.ok,
@@ -58,6 +59,7 @@ def health_detail(db: Session) -> dict:
 def create_app(load_handlers: bool = True) -> FastAPI:
     settings = get_settings()  # fail-closed: 必須の値が欠けていればここで止まる
     safety.verify_startup(settings)  # 書き込み先が許可リストを通らなければ止まる
+    jsutil.require_icu(settings.app_env)  # 本番は ICU の照合が無ければ止まる
     logging.basicConfig(level=logging.INFO)
     log.info("starting kyuka api (APP_ENV=%s)", settings.app_env)
 

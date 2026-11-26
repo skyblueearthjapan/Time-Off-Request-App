@@ -53,8 +53,8 @@ KINDS_KEY = "__kinds__"  # synced_values の中の「シートにある型」
 RAW_KEY = "__raw__"  # synced_values の中の「移行のときのシートの生の値」（日付・日時の列だけ。元のシリアル値の控え）
 
 # GAS の setValues が数にする文字（実装仕様 6-2）
-NUMBER_TEXT_RE = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)\Z")
-REQ_ID_RE = re.compile(r"^LV-\d{8}-\d{3,}\Z")
+NUMBER_TEXT_RE = re.compile(r"^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)\Z")
+REQ_ID_RE = re.compile(r"^LV-[0-9]{8}-[0-9]{3,}\Z")
 
 
 class CodecError(ValueError):

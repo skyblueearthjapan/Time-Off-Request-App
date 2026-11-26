@@ -44,6 +44,20 @@
   var IS_WRITE = {};
   WRITE_FNS.forEach(function (n) { IS_WRITE[n] = true; });
 
+  // ---- data-on-* で呼んでよい画面の関数（閉じたリスト。ここに無い名前は呼ばない） ----
+  // 各ページの .js と templates/ が data-on-* に書いている関数名だけ（web/dev/pages.test.js が過不足を確かめる）。
+  // HTML に入り込んだ data-on-click="eval" などで、window の好きな関数を呼ばせないため。
+  var ON_FNS = [
+    'batchApprove2', 'changeRetroMonth', 'clearCanvas', 'closeEditLeaveModal', 'closeModal', 'confirmDeleteLeave',
+    'doApprove', 'exportCsv', 'goBack', 'loadData', 'nextStep', 'nextStepFromType', 'onApproverChange',
+    'openEditLeaveModal', 'openModal', 'opsLoadStatus', 'opsRetryJob', 'opsRun', 'opsRunWithInput', 'prevStep',
+    'prevStepFromConfirm', 'prevStepFromType', 'saveEditLeave', 'selectRetroDate', 'showApproverModal',
+    'singleApprove2', 'submitRequest', 'switchTab', 'toggleRetroSection', 'toggleSelectAll', 'updateSelectedCount',
+    'validateSubstituteSelection'
+  ];
+  var IS_ON_FN = {};
+  ON_FNS.forEach(function (n) { IS_ON_FN[n] = true; });
+
   var INTERNAL_MSG = 'サーバーでエラーが起きました。時間をおいてもう一度お試しください。';
   var LOGIN_MSG = 'ログインが切れました。ログイン後にもう一度押してください。';
   var RETRY_409_MAX = 10;
@@ -345,6 +359,10 @@
 
   function invoke(el, ev, type) {
     var name = el.getAttribute('data-on-' + type);
+    if (!Object.prototype.hasOwnProperty.call(IS_ON_FN, name)) {
+      report(new Error('呼べない画面の関数です: ' + name));
+      return;
+    }
     var fn = global[name];
     if (typeof fn !== 'function') { report(new Error('画面の関数が見つかりません: ' + name)); return; }
     var raw = el.getAttribute('data-args-' + type);
@@ -430,5 +448,6 @@
   }
 
   // 試験用（node の shim.test.js が読む）
-  global.__vpsShim = { READ_FNS: READ_FNS, WRITE_FNS: WRITE_FNS, INTERNAL_MSG: INTERNAL_MSG, LOGIN_MSG: LOGIN_MSG };
+  global.__vpsShim = { READ_FNS: READ_FNS, WRITE_FNS: WRITE_FNS, ON_FNS: ON_FNS.slice(), INTERNAL_MSG: INTERNAL_MSG,
+    LOGIN_MSG: LOGIN_MSG };
 })(window);

@@ -63,7 +63,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import audit, permissions, timeutil
-from app.auth import CurrentUser, require_user
+from app.auth import CurrentUser, check_same_origin, require_user
 from app.config import Settings, get_settings
 from app.db import get_db
 from app.models import IdempotencyKey
@@ -425,12 +425,19 @@ def dispatch(fn: str, args: list[Any], *, db: Session, user: CurrentUser, settin
 router = APIRouter()
 
 
-def check_same_origin(request: Request, settings: Settings) -> bool:
-    """Origin があれば PUBLIC_ORIGIN と照合し、無ければブラウザの Sec-Fetch-Site: same-origin を求める。"""
-    origin = request.headers.get("origin")
-    if origin is not None:
-        return origin.rstrip("/") == settings.public_origin
-    return request.headers.get("sec-fetch-site") == "same-origin"
+MAX_ARGS_DEPTH = 32  # 画面の引数は深くても 3 段。深い入れ子は形の誤り（再帰の上限で 500 にしない）
+
+
+def _too_deep(value: Any, limit: int = MAX_ARGS_DEPTH) -> bool:
+    """配列・オブジェクトの入れ子が limit 段を超えるか（再帰を使わずに数える）。"""
+    stack = [(value, 1)]
+    while stack:
+        v, depth = stack.pop()
+        if isinstance(v, (list, dict)):
+            if depth > limit:
+                return True
+            stack.extend((c, depth + 1) for c in (v.values() if isinstance(v, dict) else v))
+    return False
 
 
 @router.post("/api/rpc/{fn}")
@@ -462,11 +469,11 @@ async def call_rpc(
     if raw.strip():
         try:
             args = json.loads(raw)
-        except ValueError:
+        except (ValueError, RecursionError):  # 入れ子が深すぎる JSON（[[[[…]]]]）も形の誤り
             return error_response(ERR_SHAPE, 400)
     else:
         args = []
-    if not isinstance(args, list):
+    if not isinstance(args, list) or _too_deep(args):
         return error_response(ERR_SHAPE, 400)
 
     key = request.headers.get(IDEMPOTENCY_HEADER)

@@ -26,7 +26,7 @@ DAY_NAMES = ("日", "月", "火", "水", "木", "金", "土")
 _EN_DAYS = ("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
 _EN_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
-YMD_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+YMD_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")  # JS の /^\d{4}-\d{2}-\d{2}$/ と同じ
 
 
 def js_truthy(value: Any) -> bool:

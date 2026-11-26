@@ -3,7 +3,7 @@
 get_ops_status(db) は JSON にできる dict を返す（日時は JST の 'yyyy-MM-dd HH:mm:ss'）。W の ops_getStatus がそのまま返す。
 - rowSync: 行の反映の待ち件数・最も古い待ちの経過秒・5 分を超えた遅れの件数・止まっている行（blocked）
 - gasJobs: GAS の仕事の状態ごとの件数、失敗の一覧（ops_retryJob で再実行できる id）、前の仕事の失敗で止まっている仕事、
-  理由のある待ち（行の反映待ち・gas_ping 待ち・送り直し待ち）
+  理由のある待ち（行の反映待ち・gas_ping 待ち・送り直し待ち）、一部の段が失敗した仕事（partial。仕事は done）
 - gasPing: 最後の gas_ping の時刻・結果・合わない点・警告・移転モード。lanePaused が真なら GAS のレーンは止まっている
 - sheetWriteGate: シートへ書く前の関所（write_gate.status）
 - lastRuns: 予定の最後の結果（マスタ同期・設定の取り込み・毎晩の照合・集計タブ・purge）
@@ -12,6 +12,7 @@ get_ops_status(db) は JSON にできる dict を返す（日時は JST の 'yyy
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -80,7 +81,25 @@ def _gas_jobs(db: Session) -> dict:
         "failed": [_job_row(j) for j in jobs.list_failed(db, lane="gas")],
         "blocked": [_job_row(j) for j in jobs.list_blocked(db)],
         "waiting": waiting,
+        "partial": _partial(db),
     }
+
+
+def _partial(db: Session, limit: int = 100) -> list[dict]:
+    """一部の段（台帳・メール・サイン・PDF の捨て）が失敗した仕事（仕事は done。新しい順）。"""
+    J = models.Job
+    rows = db.scalars(select(J).where(J.lane == "gas", J.state == "done", J.result_json.like('%"partialErrors"%'))
+                      .order_by(J.id.desc()).limit(limit))
+    out = []
+    for r in rows:
+        try:
+            errors = json.loads(r.result_json or "{}").get("partialErrors") or []
+        except (ValueError, AttributeError):
+            errors = []
+        out.append({"id": r.id, "reqId": r.request_id, "action": r.kind, "finishedAt": _t(r.finished_at),
+                    "errors": [{"step": e.get("step", ""), "error": e.get("error", ""), "message": e.get("message", "")}
+                               for e in errors if isinstance(e, dict)]})
+    return out
 
 
 def _gas_ping(db: Session, now: datetime) -> dict:

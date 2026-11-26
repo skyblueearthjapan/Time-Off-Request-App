@@ -114,8 +114,16 @@ def test_dockerfile_base_without_chromium_and_runtime_stage():
     assert "--forwarded-allow-ips='*'" not in dockerfile
     stages = re.split(r"^FROM ", dockerfile, flags=re.M)
     assert stages[-1].startswith("base AS runtime") and "USER app" in stages[-1]
-    base = next(s for s in stages if s.startswith("python:"))
+    base = next(s for s in stages if s.startswith("python:3.12-slim-bookworm AS base"))
     assert "tests" not in re.sub(r"#.*", "", base) and "requirements-dev" not in base
+    # ICU: ビルドの部品は build の段だけ、実行の段は実行用のライブラリだけ
+    build = next(s for s in stages if s.startswith("python:3.12-slim-bookworm AS build"))
+    assert "libicu-dev" in build and "pkg-config" in build
+    base_code = re.sub(r"#.*", "", base)
+    assert "libicu72" in base_code and "import icu" in base_code
+    for word in ("libicu-dev", "build-essential", "pkg-config", "g++"):
+        assert word not in base_code, word
+    assert re.search(r"^PyICU==\S+$", read(API / "requirements.txt"), flags=re.M)
     reqs = re.sub(r"#.*", "", read(API / "requirements.txt"))
     for line in (x for x in reqs.splitlines() if x and not x.startswith("#")):
         assert "==" in line, line  # 版はすべて固定
@@ -199,8 +207,17 @@ def test_nginx_no_sebastian_body_size_auth_limits_and_callback_not_logged():
     assert "sebastian" not in conf.lower()
     assert re.findall(r"client_max_body_size (\S+);", conf) == ["4m"]  # 手書きサインの PNG（base64）。仕様書 3-7
     assert "limit_req zone=kyuka_auth" in locations["/auth/"]
-    assert "access_log off;" in locations["= /auth/callback"]
-    assert "proxy_set_header X-Forwarded-For $kyuka_client_ip;" in locations["= /auth/callback"]
+    for loc in ("= /auth/callback", "= /auth/google-delegate/callback"):
+        assert "access_log off;" in locations[loc], loc
+        assert "limit_req zone=kyuka_auth" in locations[loc], loc
+        assert "proxy_set_header X-Forwarded-For $kyuka_client_ip;" in locations[loc], loc
+    assert "limit_req zone=kyuka_page" in locations["/"]
+    assert "limit_req zone=kyuka_health" in locations["= /healthz"]
+
+
+def test_compose_nginx_is_1_28():
+    compose = read(VPS_DIR / "docker-compose.yml")
+    assert "image: nginx:1.28-alpine" in compose and "nginx:1.27" not in compose
 
 
 def test_api_and_worker_drop_capabilities():

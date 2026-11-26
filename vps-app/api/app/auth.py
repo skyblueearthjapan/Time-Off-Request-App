@@ -152,6 +152,14 @@ def revoke_sessions(db: Session, email: str) -> int:
     return int(db.execute(delete(UserSession).where(UserSession.email == target)).rowcount or 0)
 
 
+def check_same_origin(request: Request, settings: Settings) -> bool:
+    """Origin があれば PUBLIC_ORIGIN と照合し、無ければブラウザの Sec-Fetch-Site: same-origin を求める。"""
+    origin = request.headers.get("origin")
+    if origin is not None:
+        return origin.rstrip("/") == settings.public_origin
+    return request.headers.get("sec-fetch-site") == "same-origin"
+
+
 def _session_token(request: Request, settings: Settings) -> str | None:
     raw = request.cookies.get(SESSION_COOKIE)
     if not raw:
@@ -394,6 +402,10 @@ def callback(
 
     response = RedirectResponse(safe_next(flow.get("next")), status_code=302)
     _clear_cookie(response, LOGIN_FLOW_COOKIE)
+    # ログインし直し: 届いた古いセッションの行は消す（新しいクッキーに置き換わり、古い行が残り続けないように）
+    old_token = _session_token(request, settings)
+    if old_token:
+        db.execute(delete(UserSession).where(UserSession.token_hash == _token_hash(old_token)))
     create_session(db, response, claims["email"], settings)
     log.info("login ok: email=%s ip=%s", claims["email"], request.headers.get("x-real-ip", ""))
     return response
@@ -401,6 +413,9 @@ def callback(
 
 @router.post("/auth/logout")
 def logout(request: Request, db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> Response:
+    # ほかのサイトから利用者をログアウトさせない（RPC と同じ入口の確認）
+    if not check_same_origin(request, settings):
+        return message_page("ログアウトできませんでした", "この画面からは操作できません。", 403)
     token = _session_token(request, settings)
     if token:
         db.execute(delete(UserSession).where(UserSession.token_hash == _token_hash(token)))

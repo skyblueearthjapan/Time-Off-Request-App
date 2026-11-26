@@ -124,9 +124,14 @@ def set_date(row: LeaveRequest, name: str, value: date | datetime | None) -> Non
     set_kind(row, name, "serial" if value is not None else None)
 
 
-def ms(moment: datetime) -> datetime:
-    """JS の Date はミリ秒まで。"""
-    return moment.replace(microsecond=(moment.microsecond // 1000) * 1000)
+def seconds(moment: datetime) -> datetime:
+    """新しく入れる日時（申請・1 次・2 次の承認）は秒で切り捨てる。
+
+    GAS 側の照合（guard の approvedAt など）は秒まで比べる。ミリ秒が残ると、シートの値と DB の値の
+    ミリ秒のずれで row_not_synced を繰り返す。シートへ書くシリアル値もこの値から作るので秒の精度になる。
+    既にある行（移行した古い行）の値は変えない（ここを通るのは新しく入れるときだけ）。
+    """
+    return moment.replace(microsecond=0)
 
 
 def mark(db: Session, req_id: str) -> int:

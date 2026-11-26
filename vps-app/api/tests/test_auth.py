@@ -175,6 +175,34 @@ def test_rpc_requires_login_and_logout_revokes(client, db, login_as):
     assert client.post("/api/rpc/api_getDeptList", json=[]).status_code == 401
 
 
+@pytest.mark.parametrize("headers", [
+    {"origin": "https://evil.example.com"}, {"origin": "null"}, {"sec-fetch-site": "cross-site"},
+    {"sec-fetch-site": "same-site"},
+])
+def test_logout_from_other_site_is_refused(client, db, login_as, headers):
+    """ほかのサイトのフォームから利用者をログアウトさせない（Origin・Sec-Fetch-Site の確認）。"""
+    login_as("someone@lineworks-local.info")
+    assert client.post("/auth/logout", headers=headers).status_code == 403
+    assert db.query(UserSession).count() == 1
+    assert client.post("/auth/logout", headers={"origin": "https://leave.lineworks-local.net"}).status_code == 200
+    assert db.query(UserSession).count() == 0
+
+
+def test_relogin_removes_the_old_session_row(client, db, fake_google, login_as):
+    """ログインし直したとき、届いた古いセッションの行を消す（古いクッキーも使えなくなる）。"""
+    login_as("tanaka@lineworks-local.info")
+    old_cookies = dict(client.cookies)
+    old_hash = db.query(UserSession).one().token_hash
+    _, q = start_login(client)
+    assert finish_login(client, fake_google, q).status_code == 302
+    rows = db.query(UserSession).all()
+    assert len(rows) == 1 and rows[0].token_hash != old_hash
+    client.cookies.clear()
+    for k, v in old_cookies.items():
+        client.cookies.set(k, v)
+    assert client.get("/auth/me").status_code == 401
+
+
 def test_logout_is_post_only(client, db, login_as):
     login_as("someone@lineworks-local.info")
     assert client.get("/auth/logout").status_code == 405

@@ -241,11 +241,11 @@ test('401 は失敗ハンドラを呼ばず、書きかけを退避し、ボタ�
   env.win.onbeforeunload = () => 'x';
 
   // 受け口から押したボタンが、処理中に無効になったまま 401 になる
-  const btn = makeEl('BUTTON', { 'data-on-click': 'doIt', 'data-args': '["R1","$this"]' });
+  const btn = makeEl('BUTTON', { 'data-on-click': 'doApprove', 'data-args': '["R1","$this"]' });
   btn.innerHTML = '承認する';
   env.buttons = [btn];
   let failed = false;
-  env.win.doIt = function (id, b) {
+  env.win.doApprove = function (id, b) {
     b.disabled = true; b.innerHTML = '処理中...';
     env.win.google.script.run.withFailureHandler(() => { failed = true; }).api_approveLeaveRequest2(id);
   };
@@ -305,14 +305,14 @@ test('画面に戻ったとき /auth/me が 401 ならその場でログイン�
 test('受け口は data-on-* の関数を、内側から順に、$this・$value・数・真偽値の引数で呼ぶ', () => {
   const env = makeEnv();
   const calls = [];
-  env.win.outer = function () { calls.push(['outer', this === env.global]); };
-  env.win.inner = function (a, b, c, d) { calls.push(['inner', a, b === inner, c, d]); };
-  env.win.onVal = function (v) { calls.push(['val', v]); };
-  const div = makeEl('DIV', { 'data-on-click': 'outer' });
-  const inner = makeEl('BUTTON', { 'data-on-click': 'inner', 'data-args': '["x","$this",3,true]' }, div);
+  env.win.loadData = function () { calls.push(['outer', this === env.global]); };
+  env.win.switchTab = function (a, b, c, d) { calls.push(['inner', a, b === inner, c, d]); };
+  env.win.onApproverChange = function (v) { calls.push(['val', v]); };
+  const div = makeEl('DIV', { 'data-on-click': 'loadData' });
+  const inner = makeEl('BUTTON', { 'data-on-click': 'switchTab', 'data-args': '["x","$this",3,true]' }, div);
   const text = { nodeType: 3, parentNode: inner };
   env.fire('click', { type: 'click', target: text });
-  const sel = makeEl('SELECT', { 'data-on-change': 'onVal', 'data-args': '["$value"]' });
+  const sel = makeEl('SELECT', { 'data-on-change': 'onApproverChange', 'data-args': '["$value"]' });
   sel.value = '1.5';
   env.fire('change', { type: 'change', target: sel });
   // 無効なボタンの click は呼ばない
@@ -321,14 +321,32 @@ test('受け口は data-on-* の関数を、内側から順に、$this・$value�
   assert.deepEqual(calls, [['inner', 'x', true, 3, true], ['outer', true], ['val', '1.5'], ['outer', true]]);
 });
 
+test('受け口は一覧（ON_FNS）に無い関数名を呼ばない（data-on-click="eval" などを入れられても）', async () => {
+  const env = makeEnv();
+  const calls = [];
+  for (const name of ['evil', 'eval', 'alert', 'print', 'open']) { env.win[name] = () => calls.push(name); }
+  for (const name of ['evil', 'eval', 'alert', 'print', 'open', 'constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    const btn = makeEl('BUTTON', { 'data-on-click': name, 'data-args': '["x"]' });
+    env.fire('click', { type: 'click', target: btn });
+  }
+  await flush();
+  assert.deepEqual(calls, []);
+  assert.equal(env.errors.length, 9);
+  assert.ok(env.errors.every((e) => /呼べない画面の関数です/.test(e.message)));
+  // 一覧の名前は呼ぶ
+  env.win.loadData = () => calls.push('loadData');
+  env.fire('click', { type: 'click', target: makeEl('BUTTON', { 'data-on-click': 'loadData' }) });
+  assert.deepEqual(calls, ['loadData']);
+});
+
 test('mouseenter・mouseleave は要素の外から入ったとき・外へ出たときだけ', () => {
   const env = makeEnv();
   const calls = [];
-  env.win.__vpsSetHover = (el, t, s) => calls.push([t, s]);
+  env.win.opsLoadStatus = (el, t, s) => calls.push([t, s]);
   const btn = makeEl('BUTTON', {
     'data-on-click': 'x',
-    'data-on-mouseenter': '__vpsSetHover', 'data-args-mouseenter': '["$this","translateY(-1px)","s"]',
-    'data-on-mouseleave': '__vpsSetHover', 'data-args-mouseleave': '["$this","",""]'
+    'data-on-mouseenter': 'opsLoadStatus', 'data-args-mouseenter': '["$this","translateY(-1px)","s"]',
+    'data-on-mouseleave': 'opsLoadStatus', 'data-args-mouseleave': '["$this","",""]'
   });
   const span = makeEl('SPAN', {}, btn);
   const outside = makeEl('DIV', {});

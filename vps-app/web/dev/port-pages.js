@@ -97,6 +97,11 @@ const PAID_CELLS = [
   [String.raw`'<td>' + (d.lastPaidDate || '-') + '</td>'`, String.raw`'<td>' + __escText(d.lastPaidDate || '-') + '</td>'`, 1]
 ];
 
+// somuAdmin・admin の CSV の出力: = + - @ で始まる値は表計算ソフトで式にならないよう頭に ' を付ける（CSV インジェクション）
+const CSV_ESC_OLD = [String.raw`  s = String(s || '');`, String.raw`  if (/[",\n]/.test(s))`].join('\n');
+const CSV_ESC_NEW = [String.raw`  s = String(s || '');`, String.raw`  if (/^[=+\-@]/.test(s)) s = "'" + s;`,
+  String.raw`  if (/[",\n]/.test(s))`].join('\n');
+
 // ---- ページごとの直し ----
 const PATCHES = {
   top: {
@@ -164,7 +169,8 @@ const PATCHES = {
       [String.raw`'<td><button class="btn-sm" onclick="singleApprove2(' + i + ', this)">2次承認</button></td>'`,
         String.raw`'<td><button class="btn-sm" data-on-click="singleApprove2" data-args="' + __vpsArgs(i, '$this') + '">2次承認</button></td>'`, 1],
       [String.raw`document.querySelector('tr[data-reqid="' + reqId + '"]')`,
-        String.raw`document.querySelector('tr[data-reqid="' + __vpsAttrSel(reqId) + '"]')`, 2]
+        String.raw`document.querySelector('tr[data-reqid="' + __vpsAttrSel(reqId) + '"]')`, 2],
+      [CSV_ESC_OLD, CSV_ESC_NEW, 1]
     ].concat(PAID_CELLS), 'somuAdmin')
   },
   deptAdmin: {
@@ -183,7 +189,8 @@ const PATCHES = {
     js: apply([
       [DOM_ESC_OLD, DOM_ESC_NEW, 1],
       [String.raw`エラー: ' + err.message + '</div>'`, String.raw`エラー: ' + __escText(err.message) + '</div>'`, 2],
-      [String.raw`">' + d.warnLevel + '</span>'`, String.raw`">' + __escText(d.warnLevel) + '</span>'`, 3]
+      [String.raw`">' + d.warnLevel + '</span>'`, String.raw`">' + __escText(d.warnLevel) + '</span>'`, 3],
+      [CSV_ESC_OLD, CSV_ESC_NEW, 1]
     ].concat(PAID_CELLS), 'admin')
   },
   leaveStatus: {
