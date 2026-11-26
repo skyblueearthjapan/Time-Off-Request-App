@@ -48,11 +48,11 @@ PROD_GAS_DEPLOYMENT_IDS_FIXED: tuple[str, ...] = PROD_GAS_SCREEN_DEPLOYMENT_IDS 
 # ===== ステージングの ID（本番がこれを指していれば起動しない・書かない） =====
 # ステージング（DB の「コピーを作成」・台帳のコピー・試験用 PDF フォルダ・写しの GAS）を作ったら、
 # ディレクターがその ID をここに足す。空のあいだは .env の STAGING_* と本番の定数の照合だけで守る。
-STAGING_SPREADSHEET_ID_KNOWN = ""
-STAGING_LEDGER_SPREADSHEET_ID_KNOWN = ""
-STAGING_PDF_FOLDER_ID_KNOWN = ""
-STAGING_GAS_SCRIPT_ID_KNOWN = ""
-STAGING_GAS_DEPLOYMENT_IDS_KNOWN: tuple[str, ...] = ()
+STAGING_SPREADSHEET_ID_KNOWN = "1SG4FV9raYuFu8jaWzCVpXvKqo1LPEO7aR44KifWrYqw"
+STAGING_LEDGER_SPREADSHEET_ID_KNOWN = "1FpeButODbprm7Bri2WQWlDgwzYDwiwLb8FvWu1XO2YM"
+STAGING_PDF_FOLDER_ID_KNOWN = "1T6ZZ8t-G7fq8BxMUoB7yw2I8i2VXqRCm"
+STAGING_GAS_SCRIPT_ID_KNOWN = "1T3bWvTY3bv8R3UeWolurVSRtq1-20NESypGegxh-iP7PPo5xcJqzXyA3"
+STAGING_GAS_DEPLOYMENT_IDS_KNOWN: tuple[str, ...] = ("AKfycbz6KZ0tAP6wpDaC-2TZMsiQ_Q7UlnDbBmISOaUwF8KkEOt457euvSuFElbO_aMsZR71tQ",)
 
 # 本番のファイル・フォルダ・スクリプトの ID（ステージングはどれも指してはいけない）
 PRODUCTION_IDS: frozenset[str] = frozenset({
