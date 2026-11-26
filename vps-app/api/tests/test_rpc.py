@@ -1,4 +1,4 @@
-"""RPC の入口と呼び出し: 閉じたリストの登録・Origin・415・404・400・501・401・403・冪等キーの再生と 409・監査。"""
+"""RPC の入口と呼び出し: 閉じたリスト（34 関数）・Origin・415・413・404・400・501・401・403・冪等キーの再生と 409・監査。"""
 from __future__ import annotations
 
 import json
@@ -31,6 +31,25 @@ def count(db, model):
 def test_closed_list_starts_empty():
     assert rpc.registered_functions() == []
     assert rpc.implemented_functions() == []
+
+
+def test_closed_list_is_the_34_functions_of_the_spec():
+    """仕様書 4-3 の 27 関数＋4-2 の ops_* 7 関数。保守の関数・画面が呼ばない関数は入れない。"""
+    assert len(rpc.SCREEN_FUNCTIONS) == 27 and len(set(rpc.SCREEN_FUNCTIONS)) == 27
+    assert len(rpc.OPS_FUNCTIONS) == 7
+    assert len(rpc.RPC_FUNCTIONS) == 34
+    assert all(n.startswith("api_") for n in rpc.SCREEN_FUNCTIONS)
+    assert all(n.startswith("ops_") for n in rpc.OPS_FUNCTIONS)
+    for name in ("api_canAccessAdmin", "api_getDeptApproverDepts", "api_approveLeaveRequest2Batch", "setupAllSheets",
+                 "setupAllTriggers", "syncAllMasters", "rebuildLeaveSummary", "checkAndSendWarnMails",
+                 "debug_checkLeaveRequestSheet", "test_generatePdf", "migrateLeaveRequestHeaders_"):
+        assert name not in rpc.RPC_FUNCTIONS, name
+
+
+@pytest.mark.parametrize("name", ["api_canAccessAdmin", "api_approveLeaveRequest2Batch", "syncAllMasters", "api_x"])
+def test_register_rejects_names_outside_closed_list(name):
+    with pytest.raises(ValueError):
+        rpc.register(name, lambda ctx: None)
 
 
 def test_register_builds_closed_list():
@@ -92,6 +111,7 @@ def test_load_domain_handlers_calls_register_all(monkeypatch):
 def test_unknown_function_is_404(logged_in):
     assert logged_in.post("/api/rpc/api_getFormUrl", json=[]).status_code == 404
     assert logged_in.post("/api/rpc/__init__", json=[]).status_code == 404
+    assert logged_in.post("/api/rpc/api_approveLeaveRequest2Batch", json=[[]]).status_code == 404
 
 
 def test_declared_but_unimplemented_function_is_501(logged_in):
@@ -99,6 +119,12 @@ def test_declared_but_unimplemented_function_is_501(logged_in):
     resp = logged_in.post("/api/rpc/api_getUpcomingLeaves", json=[])
     assert resp.status_code == 501
     assert resp.json()["ok"] is False
+
+
+@pytest.mark.parametrize("name", sorted(rpc.RPC_FUNCTIONS))
+def test_every_listed_function_is_501_until_registered(client, login_as, name):
+    login_as("owner@lineworks-local.info")  # 運用者（ops_* の 403 を通る）
+    assert client.post(f"/api/rpc/{name}", json=[]).status_code == 501
 
 
 def test_login_required_is_401_json(client):
@@ -167,7 +193,8 @@ def test_optional_args_and_wrong_arity(logged_in):
     url = "/api/rpc/api_getWorkingDays"
     assert logged_in.post(url, json=[2026]).json()["result"] == [2026, None]
     assert logged_in.post(url, json=[2026, 11]).json()["result"] == [2026, 11]
-    assert logged_in.post(url, json=[]).status_code == 400
+    # 足りない引数は GAS（JS）の undefined と同じく None で受ける（仕様書 4-1）
+    assert logged_in.post(url, json=[]).json()["result"] == [None, None]
     # 余った引数は GAS（JS）と同じく捨てる
     assert logged_in.post(url, json=[2026, None, "extra"]).json()["result"] == [2026, None]
 
@@ -186,11 +213,21 @@ def test_empty_body_means_no_args(logged_in):
 
 
 def test_large_sign_png_payload_is_accepted(logged_in):
-    """手書きサインの PNG（base64）を 1 次承認の引数で送れる（nginx は 2m まで）。"""
+    """手書きサインの PNG（base64）を 1 次承認の引数で送れる（api は 3 MB、nginx は 4m まで）。"""
     data = "data:image/png;base64," + "A" * 1_000_000
     rpc.register("api_approveLeaveRequest", lambda ctx, req_id, sign: len(sign), write=True, request_id_arg="first")
     resp = logged_in.post("/api/rpc/api_approveLeaveRequest", json=["LV-1", data])
     assert resp.status_code == 200 and resp.json()["result"] == len(data)
+
+
+def test_body_too_large_is_413(logged_in):
+    """本文の上限: api_approveLeaveRequest だけ 3 MB、ほかは 256 KB（仕様書 2-2）。"""
+    rpc.register("api_approveLeaveRequest", lambda ctx, req_id, sign: "ok", write=True)
+    rpc.register("api_submitLeaveRequest", lambda ctx, data: "ok", write=True)
+    big = "A" * (3 * 1024 * 1024)
+    assert logged_in.post("/api/rpc/api_approveLeaveRequest", json=["LV-1", big]).status_code == 413
+    assert logged_in.post("/api/rpc/api_submitLeaveRequest", json=["A" * (256 * 1024)]).status_code == 413
+    assert logged_in.post("/api/rpc/api_submitLeaveRequest", json=["A" * (200 * 1024)]).status_code == 200
 
 
 def test_content_type_must_be_json_415(logged_in):
@@ -222,7 +259,7 @@ def test_cross_origin_is_403(logged_in):
     assert logged_in.post("/api/rpc/api_getDeptList", json=[], headers={"origin": ORIGIN + "/"}).status_code == 200
 
 
-# ===== 権限（403） =====
+# ===== 権限（画面の関数は 400＝GAS の throw。ops_* は運用者だけで 403） =====
 
 
 def _register_probe(name, role, **kw):
@@ -234,7 +271,7 @@ def _register_probe(name, role, **kw):
 def test_admin_role(logged_in, db):
     called = _register_probe("api_getAdminBossView", "admin")
     resp = logged_in.post("/api/rpc/api_getAdminBossView", json=[])
-    assert resp.status_code == 403 and resp.json() == {"ok": False, "error": "権限がありません"}
+    assert resp.status_code == 400 and resp.json() == {"ok": False, "error": "権限がありません"}
     assert called == []
     make_admin(db, ME)
     assert logged_in.post("/api/rpc/api_getAdminBossView", json=[]).status_code == 200
@@ -244,7 +281,7 @@ def test_admin_role(logged_in, db):
 def test_somu_or_admin_role(logged_in, db):
     called = _register_probe("api_getPending2ndApprovals", "somu_or_admin")
     resp = logged_in.post("/api/rpc/api_getPending2ndApprovals", json=[])
-    assert resp.status_code == 403
+    assert resp.status_code == 400
     assert resp.json()["error"] == "権限がありません（総務または管理者のみ）"
     db.add(Setting(key="SOMU_EMAILS", value=ME.upper(), sheet_row=3))
     db.commit()
@@ -255,8 +292,8 @@ def test_somu_or_admin_role(logged_in, db):
 def test_dept_approver_or_admin_role(logged_in, db):
     _register_probe("api_getDeptAdminView", "dept_approver_or_admin")
     resp = logged_in.post("/api/rpc/api_getDeptAdminView", json=[])
-    assert resp.status_code == 403 and resp.json()["error"] == "部署承認者の権限がありません。"
-    db.add(DeptApprover(sheet_row=2, dept="製造1課", emails=f"x@lineworks-local.info, {ME}", name="田中"))
+    assert resp.status_code == 400 and resp.json()["error"] == "部署承認者の権限がありません。"
+    db.add(DeptApprover(sort_order=1, col_a="製造1課", col_b=f"x@lineworks-local.info, {ME}", col_c="田中"))
     db.commit()
     assert logged_in.post("/api/rpc/api_getDeptAdminView", json=[]).status_code == 200
 
@@ -264,38 +301,67 @@ def test_dept_approver_or_admin_role(logged_in, db):
 def test_admin_page_role_and_custom_message(logged_in, db):
     _register_probe("api_getAdminSomuView", "admin_page", forbidden_message="権限がありません。")
     resp = logged_in.post("/api/rpc/api_getAdminSomuView", json=[])
-    assert resp.status_code == 403 and resp.json()["error"] == "権限がありません。"
+    assert resp.status_code == 400 and resp.json()["error"] == "権限がありません。"
     make_admin(db, ME)  # 管理者でも ALLOW_ADMIN_PAGE_EMAILS に無ければだめ（GAS の canAccessAdmin_ と同じ）
-    assert logged_in.post("/api/rpc/api_getAdminSomuView", json=[]).status_code == 403
+    assert logged_in.post("/api/rpc/api_getAdminSomuView", json=[]).status_code == 400
     db.add(Setting(key="ALLOW_ADMIN_PAGE_EMAILS", value=ME, sheet_row=4))
     db.commit()
     assert logged_in.post("/api/rpc/api_getAdminSomuView", json=[]).status_code == 200
 
 
-def test_bootstrap_admin_is_admin(client, login_as):
+def test_bootstrap_admin_is_not_screen_admin(client, login_as):
+    """BOOTSTRAP_ADMINS は画面の管理者（ADMIN_EMAILS）に足さない（仕様書 8-9）。運用者ではある。"""
     rpc.register("api_getAdminBossView", lambda ctx: {"ok": True}, role="admin")
+    rpc.register("ops_getStatus", lambda ctx: {"ok": True})
     login_as("owner@lineworks-local.info")
-    assert client.post("/api/rpc/api_getAdminBossView", json=[]).status_code == 200
+    assert client.post("/api/rpc/api_getAdminBossView", json=[]).status_code == 400
+    assert client.post("/api/rpc/ops_getStatus", json=[]).status_code == 200
+
+
+def test_ops_functions_only_for_operators(logged_in, db):
+    """K-9: ops_* は総務・管理者・BOOTSTRAP_ADMINS だけ。ほかは 403「管理者権限がありません。」。"""
+    called = []
+    rpc.register("ops_getStatus", lambda ctx: called.append(1) or {"ok": True})
+    resp = logged_in.post("/api/rpc/ops_getStatus", json=[])
+    assert resp.status_code == 403 and resp.json() == {"ok": False, "error": "管理者権限がありません。"}
+    assert called == []
+    db.add(Setting(key="ALLOW_ADMIN_PAGE_EMAILS", value=ME, sheet_row=5))  # 古い管理画面だけでは足りない
+    db.commit()
+    assert logged_in.post("/api/rpc/ops_getStatus", json=[]).status_code == 403
+    db.add(Setting(key="SOMU_EMAILS", value=ME, sheet_row=6))
+    db.commit()
+    assert logged_in.post("/api/rpc/ops_getStatus", json=[]).status_code == 200
+    assert called == [1]
+
+
+def test_ops_function_for_admin(logged_in, db):
+    rpc.register("ops_retryJob", lambda ctx, job_id: {"ok": True}, write=True)
+    assert logged_in.post("/api/rpc/ops_retryJob", json=[1]).status_code == 403
+    make_admin(db, ME)
+    assert logged_in.post("/api/rpc/ops_retryJob", json=[1]).status_code == 200
 
 
 def test_handler_side_check_keeps_gas_order(logged_in, db):
-    """確かめの順を GAS と同じにしたい関数は、業務関数の中で require_admin を呼ぶ（400 が先、403 が後）。"""
+    """確かめの順を GAS と同じにしたい関数（21: 先に reqId、次に権限）は role を付けず業務関数の中で確かめる。"""
 
-    def batch(ctx, ids):
-        if not ids:
-            raise rpc.RpcError("対象がありません")
+    def approve_second(ctx, req_id, approver2_email):
+        if not req_id:
+            raise rpc.RpcError("REQ_IDが指定されていません。")
         if not ctx.has_role("somu_or_admin"):
-            raise rpc.RpcForbidden("権限がありません（総務または管理者のみ）")
-        ctx.require_admin()
-        return {"ok": True}
+            raise rpc.RpcError("権限がありません（総務または管理者のみ）")
+        return {"ok": True, "reqId": req_id}
 
-    rpc.register("api_approveLeaveRequest2Batch", batch, write=True, request_id_arg="first_list")
-    url = "/api/rpc/api_approveLeaveRequest2Batch"
-    assert logged_in.post(url, json=[[]]).status_code == 400
-    resp = logged_in.post(url, json=[["a"]])
-    assert resp.status_code == 403 and resp.json()["error"] == "権限がありません（総務または管理者のみ）"
+    rpc.register("api_approveLeaveRequest2", approve_second, write=True, request_id_arg="first")
+    url = "/api/rpc/api_approveLeaveRequest2"
+    resp = logged_in.post(url, json=["", ME])
+    assert resp.status_code == 400 and resp.json()["error"] == "REQ_IDが指定されていません。"
+    resp = logged_in.post(url, json=["LV-1", ME])
+    assert resp.status_code == 400 and resp.json()["error"] == "権限がありません（総務または管理者のみ）"
     make_admin(db, ME)
-    assert logged_in.post(url, json=[["a"]]).status_code == 200
+    assert logged_in.post(url, json=["LV-1", ME]).status_code == 200
+    with pytest.raises(rpc.RpcError):  # require_admin も 400（RpcError）
+        rpc.RpcContext(db=db, user=types.SimpleNamespace(email="x@lineworks-local.info"),
+                       settings=None).require_admin()
 
 
 # ===== 冪等キー =====
@@ -416,9 +482,9 @@ def test_purge_idempotency_keys(db):
 
 
 def test_batch_request_ids_are_audited(logged_in, db):
-    rpc.register("api_approveLeaveRequest2Batch", lambda ctx, ids: {"ok": True}, write=True,
+    rpc.register("api_approveLeaveRequest2", lambda ctx, ids, email=None: {"ok": True}, write=True,
                  request_id_arg="first_list")
-    logged_in.post("/api/rpc/api_approveLeaveRequest2Batch", json=[["A", "B"]])
+    logged_in.post("/api/rpc/api_approveLeaveRequest2", json=[["A", "B"]])
     row = db.scalars(select(AuditLog)).one()
     assert row.ok and row.user_email == ME and json.loads(row.request_ids) == ["A", "B"]
 

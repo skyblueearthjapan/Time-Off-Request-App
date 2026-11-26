@@ -59,14 +59,14 @@ def test_defaults(settings, monkeypatch):
     assert settings.session_max_age_days == 90
     assert settings.session_idle_hours == 2160  # 90 日（オーナーの決定 K-6）
     assert settings.gas_call_timeout_seconds == 330
-    assert settings.gas_internal_auth == "delegate_bearer"
+    assert settings.gas_internal_auth == "bearer"
     assert settings.sheet_config_sync_minutes == 5
     assert settings.app_url == "https://leave.lineworks-local.net/"
     assert settings.oauth_redirect_uri == "https://leave.lineworks-local.net/auth/callback"
     assert settings.delegate_redirect_uri == "https://leave.lineworks-local.net/auth/google-delegate/callback"
     monkeypatch.delenv("GAS_INTERNAL_AUTH", raising=False)
     values = {k.lower(): v for k, v in TEST_ENV.items() if k != "GAS_INTERNAL_AUTH"}
-    assert config.Settings(_env_file=None, **values).gas_internal_auth == "delegate_bearer"  # type: ignore[call-arg]
+    assert config.Settings(_env_file=None, **values).gas_internal_auth == "bearer"  # type: ignore[call-arg]
 
 
 def test_settings_have_no_sebastian_or_portal_keys(settings):
@@ -146,6 +146,26 @@ def test_staging_refuses_production_gas_deployment(deployment):
         make_settings(gas_internal_url=gas_url(deployment))
 
 
+@pytest.mark.parametrize("deployment", config.PROD_GAS_SCREEN_DEPLOYMENT_IDS)
+def test_any_env_refuses_screen_deployment_as_internal_url(deployment):
+    """GAS_INTERNAL_URL が画面のデプロイ（@106・@104）なら、どの環境も起動しない（仕様書 1-1）。"""
+    with pytest.raises(ValidationError):
+        prod_settings(gas_internal_url=gas_url(deployment))
+    with pytest.raises(ValidationError):
+        make_settings(gas_internal_url=gas_url(deployment))
+
+
+@pytest.mark.parametrize("mode", ["bearer", "anonymous"])
+def test_gas_internal_auth_values(mode):
+    assert make_settings(gas_internal_auth=mode).gas_internal_auth == mode
+
+
+@pytest.mark.parametrize("bad", ["delegate_bearer", "none", ""])
+def test_gas_internal_auth_rejects_other_values(bad):
+    with pytest.raises(ValidationError):
+        make_settings(gas_internal_auth=bad)
+
+
 def test_staging_settings_point_to_staging(settings):
     assert settings.db_spreadsheet_id == STAGING_SHEET
     assert settings.ledger_spreadsheet_id == STAGING_LEDGER
@@ -189,7 +209,7 @@ S_TABS = ["V_LEAVE_SUMMARY"]
 C_TABS = ["作業員マスタ", "M_CALENDAR", "M_STAMP", "M_DEPT_APPROVERS"]
 FORBIDDEN_TABS = ["M_SYSTEM_SETTING", "M_LOOKUP", "BatchLogs", "社内カレンダーマスタ", "StampMap", "DeptApprovers",
                   "2026年度", "Sheet1", "TMP_PDF_x"]
-PURPOSES = ["row_sync", "reconcile", "summary_sync", "master_sync"]
+PURPOSES = ["row_sync", "reconcile", "summary_sheet", "master_sync"]
 
 
 @pytest.mark.parametrize("tab", A_TABS)
@@ -204,8 +224,8 @@ def test_a_tabs_writable_only_by_row_sync_and_reconcile(settings, tab, purpose):
 
 @pytest.mark.parametrize("tab", S_TABS)
 @pytest.mark.parametrize("purpose", PURPOSES)
-def test_summary_tab_writable_only_by_summary_sync(settings, tab, purpose):
-    if purpose == "summary_sync":
+def test_summary_tab_writable_only_by_summary_sheet(settings, tab, purpose):
+    if purpose == "summary_sheet":
         assert safety.assert_writable(STAGING_SHEET, tab, purpose, settings)
     else:
         with pytest.raises(UnsafeWriteError):
@@ -297,10 +317,20 @@ def test_write_methods():
     for tab in A_TABS + ["M_SYSTEM_SETTING", "M_LOOKUP"]:
         with pytest.raises(UnsafeWriteError):  # 行単位のタブ・読むだけのタブの clear は使わない
             safety.assert_write_method("values.batchClear", tab)
-    safety.assert_write_method("values.append", "T_LEAVE_REQUEST")
-    for tab in S_TABS + C_TABS:
+    # values.append は使わない（仕様書 6-2・9-1。半端な行を上書きするおそれ）
+    for tab in A_TABS + S_TABS + C_TABS:
         with pytest.raises(UnsafeWriteError):
             safety.assert_write_method("values.append", tab)
+    for method in ("values.update", "values.batchUpdate"):
+        for tab in S_TABS + C_TABS:
+            safety.assert_write_method(method, tab)
+        for tab in A_TABS + ["M_SYSTEM_SETTING", "M_LOOKUP"]:
+            with pytest.raises(UnsafeWriteError):  # T_LEAVE_REQUEST は updateCells だけ
+                safety.assert_write_method(method, tab)
+    safety.assert_write_method("appendDimension", "T_LEAVE_REQUEST")
+    for tab in S_TABS + C_TABS:
+        with pytest.raises(UnsafeWriteError):
+            safety.assert_write_method("appendDimension", tab)
     with pytest.raises(UnsafeWriteError):
         safety.assert_write_method("values.clear", "M_CALENDAR")
 

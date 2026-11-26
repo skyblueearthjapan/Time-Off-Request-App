@@ -12,8 +12,8 @@ revoke_sessions(db, email) でそのメールのセッションを全部消せ�
 
 RPC の未ログイン・期限切れは 401 の JSON（main.py が AuthRequired を受ける）。
 `GET /auth/me` はログインしていれば {ok, email, name}、していなければ 401（画面が入力の前に確かめる＝3-5）。
-管理者の判定は permissions.is_admin（M_SYSTEM_SETTING の ADMIN_EMAILS ＋ BOOTSTRAP_ADMINS）。BOOTSTRAP_ADMINS は委任の開始
-（/auth/google-delegate/start）にも使う（is_bootstrap_admin）。
+管理者の判定は permissions.is_admin（M_SYSTEM_SETTING の ADMIN_EMAILS だけ）。BOOTSTRAP_ADMINS は運用者
+（permissions.is_operator）と委任の開始（/auth/google-delegate/start。is_bootstrap_admin）に使う。
 """
 from __future__ import annotations
 
@@ -193,7 +193,7 @@ def require_user(user: CurrentUser | None = Depends(get_optional_user)) -> Curre
 
 
 def safe_next(value: str | None) -> str:
-    """ログイン後の戻り先。同じサイトの中の相対パスだけ（?requestId= などはそのまま保つ）。"""
+    """ログイン後の戻り先。同じサイトの中の相対パスだけ（?page=…&reqId=… などはそのまま保つ）。"""
     text = (value or "").strip()
     if (
         not text

@@ -76,10 +76,10 @@ def test_login_redirect_has_state_nonce_pkce_and_hd(client):
 
 
 def test_successful_login_returns_to_request_detail(client, db, fake_google):
-    _, q = start_login(client, "/?page=approve2&date=2026-11-25")
+    _, q = start_login(client, "/?page=sign&reqId=LV-20261125-001")
     resp = finish_login(client, fake_google, q)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/?page=approve2&date=2026-11-25"
+    assert resp.headers["location"] == "/?page=sign&reqId=LV-20261125-001"
     set_cookie = ";".join(resp.headers.get_list("set-cookie"))
     assert auth.SESSION_COOKIE in set_cookie
     row = db.query(UserSession).one()
@@ -142,7 +142,7 @@ def test_google_error_param_is_rejected(client, db):
 @pytest.mark.parametrize(
     "value,expected",
     [
-        ("/?page=approve2&date=2026-11-25", "/?page=approve2&date=2026-11-25"),
+        ("/?page=sign&reqId=LV-20261125-001", "/?page=sign&reqId=LV-20261125-001"),
         ("//evil.example.com/", "/"),
         ("https://evil.example.com/", "/"),
         ("/\\evil.example.com", "/"),

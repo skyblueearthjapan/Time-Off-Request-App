@@ -1,23 +1,24 @@
-"""画面から呼ぶ関数（RPC）の登録と呼び出し。`POST /api/rpc/{fn}`、本文は引数の JSON 配列。
+"""画面から呼ぶ関数（RPC）の登録と呼び出し。`POST /api/rpc/{fn}`、本文は引数の JSON 配列（仕様書 4-1）。
 
 入口で確かめること: Origin が PUBLIC_ORIGIN（無ければ Sec-Fetch-Site: same-origin）、Content-Type: application/json、
-fn が閉じたリスト（起動時に業務の側が register で登録した名前だけ）にある、本文が配列。
+fn が閉じたリスト RPC_FUNCTIONS（4-3 の 27 関数＋4-2 の ops_* 7 関数）にある、本文の大きさ、本文が配列。
 
 応答（gas-shim.js の取り決め）:
 - 成功        200 {"ok": true, "result": R}（R が null・{error}・{ok:false,…} でもそのまま）
-- 業務エラー   400 {"ok": false, "error": "GAS と同じ文"}（RpcError を raise する）
+- 業務エラー   400 {"ok": false, "error": "GAS と同じ文"}（RpcError を raise する。権限の拒否も GAS では例外なので 400）
 - 未ログイン   401 {"ok": false, "error": "ログインが必要です。", "login": "/auth/login"}（main.py）
-- 権限が無い   403 {"ok": false, "error": <RpcForbidden の文>}
-- 別サイト     403、JSON でない 415、閉じたリストに無い関数 404、名前だけ決めて中身がまだの関数 501
+- 運用者でない 403 {"ok": false, "error": "管理者権限がありません。"}（ops_* を permissions.is_operator が偽の人が呼んだ）
+- 別サイト     403、JSON でない 415、本文が大きすぎる 413（api_approveLeaveRequest は 3 MB、ほかは 256 KB）
+- 閉じたリストに無い関数 404、リストにあるがまだ登録していない関数 501
 - 冪等キーが処理中 409、想定外のエラー 500（詳細はログだけ）
 
-閉じたリストへの登録（担当 W）: `app/domain/register.py` に `register_all(register)` を置く。起動時に
-rpc.load_domain_handlers がそれを 1 回呼ぶ。登録していない名前は 404 で、外から呼べる関数はここに並べたものだけ。
+登録（担当 W）: `app/domain/register.py` に `register_all(register)` を置く。起動時に rpc.load_domain_handlers が
+それを 1 回呼ぶ。RPC_FUNCTIONS に無い名前は register できない（ValueError）。
 
     # app/domain/register.py
     from app.rpc import RpcContext, RpcError
 
-    def api_submitLeaveRequest(ctx: RpcContext, payload):
+    def api_submitLeaveRequest(ctx: RpcContext, data=None):
         ...                       # ctx.db・ctx.user.email（小文字）・ctx.now（UTC。1 回の呼び出しで同じ）・ctx.settings
         raise RpcError("休暇日を入力してください")
 
@@ -25,21 +26,21 @@ rpc.load_domain_handlers がそれを 1 回呼ぶ。登録していない名前�
         register("api_getDeptList", api_getDeptList)                                  # 読むだけ
         register("api_submitLeaveRequest", api_submitLeaveRequest, write=True)        # 書く（冪等キー・監査）
         register("api_approveLeaveRequest", api_approveLeaveRequest, write=True, request_id_arg="first")
-        register("api_approveLeaveRequest2", api_approveLeaveRequest2, write=True, request_id_arg="first",
-                 role="somu_or_admin")                                               # 総務か管理者だけ（403）
-        register("api_approveLeaveRequest2Batch", fn, write=True, request_id_arg="first_list")
-        register("api_x")         # 名前だけ先に決める（中身ができるまで 501）
+        register("api_getPending2ndApprovals", fn, role="somu_or_admin")             # 違えば 400（GAS の文）
+        register("ops_retryJob", ops_retryJob, write=True)                            # ops_* は運用者だけ（403）
 
 register(name, handler=None, *, write=False, role=None, request_id_arg=None, forbidden_message=""):
 - write=True: 書く関数。X-Idempotency-Key を受け（同じ人の同じキーの 2 回目は 1 回目の返事を返す）、
   audit_log を同じトランザクションで残す。
 - role: rpc が呼ぶ前に確かめる権限（ROLE_CHECKS）。"admin"（管理者）・"somu_or_admin"（総務か管理者）・
   "dept_approver_or_admin"（部署承認者か管理者）・"admin_page"（ALLOW_ADMIN_PAGE_EMAILS）。None は誰でも（ログインだけ）。
-  403 の文は ROLE_MESSAGES（GAS の文）。関数ごとに違う文は forbidden_message で渡す。
-  GAS の確かめの順を保ちたい関数は role を付けず、業務関数の中で ctx.require_admin() などを呼ぶ（RpcForbidden → 403）。
+  拒否は 400 で、文は ROLE_MESSAGES（GAS の文）か forbidden_message。
+  GAS の確かめの順を保ちたい関数（先に引数を確かめる 21 など）は role を付けず、業務関数の中で RpcError を投げる。
+- ops_* は role に関係なく permissions.is_operator を確かめる（偽なら 403 "管理者権限がありません。"）。
 - request_id_arg: 監査に残す申請 ID の場所。"first"（第 1 引数が REQ_ID）・"first_list"（第 1 引数が REQ_ID の配列）。
   返事が dict で "reqId" を持てばそれも残す。
-- 引数は GAS と同じ並びの位置引数。省略できる引数には既定値を持たせる。余った引数は捨てる（JS と同じ）。
+- 引数は GAS と同じ並びの位置引数。省略できる引数には既定値を持たせる（足りない引数は None で受ける）。
+  余った引数は捨てる（JS と同じ）。
 - 業務関数は commit しない（rpc が冪等キー・監査と一緒に確定する）。
 """
 from __future__ import annotations
@@ -72,6 +73,34 @@ log = logging.getLogger(__name__)
 
 REQUEST_ID_ARGS = ("first", "first_list")
 
+# 閉じたリスト（仕様書 4-3 の画面の 27 関数＋4-2 の運用者だけの 7 関数。計 34）。ここに無い名前は 404。
+SCREEN_FUNCTIONS: tuple[str, ...] = (
+    "api_isDeptApprover", "api_isAdmin", "api_isSomu", "api_getDeptList", "api_getWorkerInfo", "api_getLookupData",
+    "api_getWorkingDays", "api_getWorkersByDept", "api_getUpcomingLeaves", "api_getHolidayDays",
+    "api_getPastWorkingDays", "api_submitLeaveRequest", "api_getAllPendingRequests", "api_editLeaveRequest",
+    "api_deleteLeaveRequest", "api_getLeaveRequestById", "api_getApproverList", "api_approveLeaveRequest",
+    "api_getCurrentApproverInfo", "api_getPending2ndApprovals", "api_approveLeaveRequest2", "api_getSomuAdminView",
+    "api_getApproverProfiles", "api_getDeptAdminView", "api_getAdminSomuView", "api_getAdminBossView",
+    "api_getLeaveStatusSearch",
+)
+OPS_FUNCTIONS: tuple[str, ...] = (
+    "ops_getStatus", "ops_retryJob", "ops_syncSheetConfigNow", "ops_runMasterSync", "ops_rebuildSummaryNow",
+    "ops_sendWarnMail", "ops_revokeSessions",
+)
+RPC_FUNCTIONS: frozenset[str] = frozenset(SCREEN_FUNCTIONS + OPS_FUNCTIONS)
+
+# 本文の上限（バイト）。手書きサインの PNG を送る api_approveLeaveRequest だけ 3 MB（nginx は 4m）
+BODY_LIMIT_DEFAULT = 256 * 1024
+BODY_LIMITS: dict[str, int] = {"api_approveLeaveRequest": 3 * 1024 * 1024}
+
+
+def body_limit(fn: str) -> int:
+    return BODY_LIMITS.get(fn, BODY_LIMIT_DEFAULT)
+
+
+def is_ops_function(name: str) -> bool:
+    return name in OPS_FUNCTIONS
+
 
 @dataclass(frozen=True)
 class FunctionSpec:
@@ -96,7 +125,9 @@ ERR_IN_PROGRESS = "同じ操作を処理しています。少し待ってから�
 ERR_KEY_REUSED = "同じ操作キーが別の操作に使われています。画面を読み込み直してください。"
 ERR_UNKNOWN_FN = "その操作はありません。"
 ERR_NOT_ADMIN = "権限がありません"
-# role ごとの 403 の文（GAS の throw の文。関数ごとに違えば register の forbidden_message で変える）
+ERR_NOT_OPERATOR = "管理者権限がありません。"
+ERR_TOO_LARGE = "送る内容が大きすぎます。"
+# role ごとの拒否（400）の文（GAS の throw の文。関数ごとに違えば register の forbidden_message で変える）
 ROLE_MESSAGES: dict[str, str] = {
     "admin": "権限がありません",
     "somu_or_admin": "権限がありません（総務または管理者のみ）",
@@ -114,9 +145,9 @@ class RpcError(Exception):
 
 
 class RpcForbidden(RpcError):
-    """権限の無い人が呼んだ（403）。"""
+    """運用者でない人が ops_* を呼んだ（403）。画面の業務関数の権限の拒否は RpcError（400）にする（GAS と同じ）。"""
 
-    def __init__(self, message: str = ERR_NOT_ADMIN):
+    def __init__(self, message: str = ERR_NOT_OPERATOR):
         super().__init__(message)
 
 
@@ -145,14 +176,20 @@ class RpcContext:
 
     @property
     def is_admin(self) -> bool:
+        """ADMIN_EMAILS にあるか（BOOTSTRAP_ADMINS は足さない。8-9）。"""
         if self._is_admin is None:
-            self._is_admin = permissions.is_admin(self.db, self.user.email, self.settings)
+            self._is_admin = permissions.is_admin(self.db, self.user.email)
         return self._is_admin
 
-    def require_admin(self) -> str:
-        """管理者でなければ RpcForbidden（403）。メールを返す。"""
+    @property
+    def is_operator(self) -> bool:
+        """運用者か（K-9: 総務・管理者・BOOTSTRAP_ADMINS）。"""
+        return permissions.is_operator(self.db, self.user.email, self.settings)
+
+    def require_admin(self, message: str = ERR_NOT_ADMIN) -> str:
+        """管理者でなければ RpcError（400。GAS の throw と同じ）。メールを返す。"""
         if not self.is_admin:
-            raise RpcForbidden()
+            raise RpcError(message)
         return self.user.email
 
     def has_role(self, role: str) -> bool:
@@ -166,7 +203,7 @@ ROLE_CHECKS: dict[str, Callable[[RpcContext], bool]] = {
     "admin": lambda ctx: ctx.is_admin,
     "somu_or_admin": lambda ctx: ctx.is_admin or permissions.is_somu(ctx.db, ctx.user.email),
     "dept_approver_or_admin": lambda ctx: ctx.is_admin or permissions.is_dept_approver(ctx.db, ctx.user.email),
-    "admin_page": lambda ctx: permissions.can_access_admin_page(ctx.db, ctx.user.email),
+    "admin_page": lambda ctx: permissions.can_access_admin(ctx.db, ctx.user.email),
 }
 
 
@@ -186,9 +223,9 @@ def reset_registry() -> None:
 
 def register(name: str, handler: Handler | None = None, *, write: bool = False, role: str | None = None,
              request_id_arg: str | None = None, forbidden_message: str = "") -> Handler | None:
-    """閉じたリストに 1 つ足す。handler が無ければ名前だけ（501）。同じ名前の二重登録は ValueError。"""
-    if not name or not name.replace("_", "").isalnum() or not name[0].isalpha():
-        raise ValueError(f"公開できない関数名です: {name!r}")
+    """業務関数を登録する。handler が無ければ名前だけ（501）。RPC_FUNCTIONS に無い名前・二重登録は ValueError。"""
+    if name not in RPC_FUNCTIONS:
+        raise ValueError(f"閉じたリスト（RPC_FUNCTIONS）に無い関数名です: {name!r}")
     if name in _specs:
         raise ValueError(f"二重に登録しています: {name}")
     if role is not None and role not in ROLE_CHECKS:
@@ -210,7 +247,7 @@ def get_handler(name: str) -> Handler | None:
 
 
 def registered_functions() -> list[str]:
-    """閉じたリスト（登録の順）。"""
+    """登録した関数（登録の順）。"""
     return list(_specs)
 
 
@@ -263,9 +300,14 @@ def _call(ctx: RpcContext, handler: Handler, args: list[Any]) -> Any:
     sig = inspect.signature(handler)
     params = list(sig.parameters.values())
     if not any(p.kind == p.VAR_POSITIONAL for p in params):
-        # GAS（JS）は余った引数を黙って捨てるので、同じく切り詰める（正しさ 低-7）
-        positional = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)]
-        args = list(args)[:max(0, len(positional) - 1)]
+        # GAS（JS）は余った引数を黙って捨て、足りない引数は undefined にする。同じく切り詰め、
+        # 既定値の無い足りない引数は None で埋める（仕様書 4-1）
+        positional = [p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)][1:]
+        args = list(args)[:len(positional)]
+        for p in positional[len(args):]:
+            if p.default is not p.empty:
+                break
+            args.append(None)
     try:
         bound = sig.bind(ctx, *args)
     except TypeError as exc:
@@ -316,19 +358,25 @@ def _audit_failure(db: Session, user: CurrentUser, spec: FunctionSpec, args: lis
 
 def dispatch(fn: str, args: list[Any], *, db: Session, user: CurrentUser, settings: Settings,
              request: Request | None = None, idempotency_key: str | None = None) -> Response:
+    if fn not in RPC_FUNCTIONS:
+        return error_response(ERR_UNKNOWN_FN, 404)
     handler = _registry.get(fn)
     spec = _specs.get(fn)
     if handler is None or spec is None:
-        return error_response(ERR_UNKNOWN_FN, 404)
+        return error_response(f"この機能はまだ用意されていません。（{fn}）", 501)
     ctx = RpcContext(db=db, user=user, settings=settings, now=timeutil.now_utc(), request=request, fn=fn)
     writes = spec.write
     use_key = bool(idempotency_key) and writes
     key_row: IdempotencyKey | None = None
 
     try:
-        if spec.role is not None and not ctx.has_role(spec.role):
+        if is_ops_function(fn) and not ctx.is_operator:
             db.rollback()
-            return error_response(spec.forbidden_message or ROLE_MESSAGES[spec.role], 403)
+            return error_response(ERR_NOT_OPERATOR, 403)
+        if spec.role is not None and not ctx.has_role(spec.role):
+            # GAS は権限の拒否も throw（失敗ハンドラに文が届く）なので 400
+            db.rollback()
+            return error_response(spec.forbidden_message or ROLE_MESSAGES[spec.role], 400)
         if use_key:
             replay = _replay(db, user.email, idempotency_key, fn)  # type: ignore[arg-type]
             if replay is not None:
@@ -399,10 +447,18 @@ async def call_rpc(
     content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
     if content_type != "application/json":
         return error_response(ERR_SHAPE, 415)
-    if fn not in _specs:
+    if fn not in RPC_FUNCTIONS:
         return error_response(ERR_UNKNOWN_FN, 404)
 
-    raw = await request.body()
+    limit = body_limit(fn)
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit() and int(declared) > limit:
+        return error_response(ERR_TOO_LARGE, 413)
+    raw = b""
+    async for chunk in request.stream():
+        raw += chunk
+        if len(raw) > limit:
+            return error_response(ERR_TOO_LARGE, 413)
     if raw.strip():
         try:
             args = json.loads(raw)

@@ -6,7 +6,7 @@ mark_dirty(db, table_name, pk) を呼ぶ。row_version を +1 し、sheet_sync_s
 desired_version > synced_version の行を、DB の今の値でシートへ書く。
 
 - table_name は "leave_requests"、pk は REQ_ID（文字）。新しい行は先に db.add・flush してから呼ぶ。
-- V_LEAVE_SUMMARY（全行の書き直し）とマスタはここを通さない（D の summary_sync・master_sync が書く）。
+- V_LEAVE_SUMMARY（全行の書き直し）とマスタはここを通さない（D の summary_sheet・master_sync が書く）。
 - commit は呼び出し側（rpc.py など）。
 """
 from __future__ import annotations

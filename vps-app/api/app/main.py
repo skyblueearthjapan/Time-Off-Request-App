@@ -70,7 +70,7 @@ def create_app(load_handlers: bool = True) -> FastAPI:
     @app.get("/healthz")
     def healthz(request: Request, detail: int = 0, db: Session = Depends(get_db),
                 s: Settings = Depends(get_settings)) -> Response:
-        # 外には {"ok", "env"} だけ。詳細はログインした管理者が ?detail=1 で見る。
+        # 外には {"ok", "env"} だけ。詳細はログインした運用者（permissions.is_operator）が ?detail=1 で見る。
         try:
             db.execute(text("SELECT 1"))
         except Exception:  # noqa: BLE001
@@ -79,7 +79,7 @@ def create_app(load_handlers: bool = True) -> FastAPI:
         body: dict = {"ok": True, "env": s.app_env}
         if detail:
             user = auth.get_optional_user(request, db, s)
-            if user is not None and permissions.is_admin(db, user.email, s):
+            if user is not None and permissions.is_operator(db, user.email, s):
                 body["detail"] = health_detail(db)
         return rpc.json_response(body)
 

@@ -46,7 +46,7 @@ TEST_ENV = {
     "GAS_INTERNAL_URL": "https://script.google.com/macros/s/AKfycbTESTstagingInternal/exec",
     "GAS_INTERNAL_TOKEN": "test-gas-internal-token-0123456789abcdef",
     "GAS_CALL_TIMEOUT_SECONDS": "330",
-    "GAS_INTERNAL_AUTH": "delegate_bearer",
+    "GAS_INTERNAL_AUTH": "bearer",
     "DB_SHEET_TIMEZONE": "Etc/GMT",
     "SHEET_CONFIG_SYNC_MINUTES": "5",
 }

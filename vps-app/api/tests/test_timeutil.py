@@ -82,6 +82,11 @@ def test_closing_month(moment, expected):
     ("yyyy/MM/dd H:mm:ss", "2026/11/26 6:05:09"),
     ("HH:mm", "06:05"),
     ("yyyyMMdd'T'HHmm", "20261126T0605"),
+    # 仕様書 10-2 の 6 つの形
+    ("yyyy/MM/dd", "2026/11/26"),
+    ("yyyy/MM/dd HH:mm", "2026/11/26 06:05"),
+    ("MM/dd HH:mm", "11/26 06:05"),
+    ("yyyyMMdd", "20261126"),
 ])
 def test_to_jst_text_gas_patterns(pattern, expected):
     moment = datetime(2026, 11, 25, 21, 5, 9, tzinfo=timezone.utc)  # JST 2026-11-26 06:05:09
