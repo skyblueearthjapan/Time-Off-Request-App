@@ -251,6 +251,24 @@ def test_missing_origin_requires_same_origin_fetch_403(logged_in):
     assert logged_in.post("/api/rpc/api_getDeptList", json=[], headers={"origin": ORIGIN}).status_code == 200
 
 
+@pytest.mark.parametrize("depth", [33, 2000, 20_000])  # 2000 段から json の再帰の上限を超える（本文は 256 KB 以内）
+def test_deeply_nested_json_is_400_not_500(logged_in, depth):
+    """[[[[…]]]] の深い入れ子は、json の再帰の上限（RecursionError）でも 500 にせず形の誤り（400）。"""
+    rpc.register("api_getDeptList", lambda ctx, *a: "ok")
+    body = ("[" * depth + "]" * depth).encode()
+    resp = logged_in.post("/api/rpc/api_getDeptList", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 400 and resp.json() == {"ok": False, "error": "呼び出しの形が正しくありません。"}
+    deep_obj = ('[' + '{"a":' * depth + '1' + '}' * depth + ']').encode()
+    resp = logged_in.post("/api/rpc/api_getDeptList", content=deep_obj, headers={"content-type": "application/json"})
+    assert resp.status_code == 400
+
+
+def test_normal_nesting_is_accepted(logged_in):
+    rpc.register("api_getDeptList", lambda ctx, *a: "ok")
+    resp = logged_in.post("/api/rpc/api_getDeptList", json=[{"a": [{"b": [1]}]}, [[["x"]]]])
+    assert resp.status_code == 200
+
+
 def test_cross_origin_is_403(logged_in):
     rpc.register("api_getDeptList", lambda ctx: "ok")
     for origin in ("https://evil.example.com", "http://leave.lineworks-local.net", "null",
