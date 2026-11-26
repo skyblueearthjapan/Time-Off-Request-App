@@ -1,4 +1,4 @@
-"""services/summary_sheet: 見出し 12 列・並び・型（年度と作業員 ID と回数は数、最終有給日は日付のセルで今の小数部の形）・
+"""services/summary_sheet: 見出し 12 列・並び・型（年度と作業員 ID と回数は数、最終有給日はいつも整数のシリアル値の日付のセル）・
 書いてから余りを消す・0 行で書かない・数式にしない・タブを作らない・予約の間引き・関所。"""
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import delete, select
 
 from app import jobs
+from app.domain.summaries import last_paid_date_display  # 本物（env は偽の summaries を差し込む）
 from app.models import Job, LeaveRequest
 from app.services import summary_sheet, write_gate
 from app.services import sheet_codec as codec
@@ -46,23 +47,27 @@ def test_writes_12_columns_with_types_and_clears_rest(env, db, settings, monkeyp
     assert values[2][11] == "=危険" and not isinstance(values[2][11], type(None))
     assert type(values[2][11]).__name__ == "str"  # 式にならない（' を付けて文字）
     assert values[3][11] == "-x"
-    # 最終有給日は今のタブの形（.625）の日付のセル
+    # 最終有給日は、今のタブが .625 の形でも、いつも整数のシリアル値の日付のセル（空は空）
     lp = env.tab.get(1, 10)
-    assert lp.value % 1 == 0.625 and lp.fmt["type"] == "DATE"
+    assert lp.value == (date(2026, 11, 27) - codec.EPOCH.date()).days and lp.fmt["type"] == "DATE"
     assert codec.serial_to_jst_date(lp.value, "Etc/GMT") == date(2026, 11, 27)
+    assert values[2][10] in ("", None)
     assert len(values) == 4 and all(len(r) <= 12 for r in values)  # 余りは消えた
     # 書いてから消す（values.update → updateCells（表示形式）→ batchClear の順）
     kinds = [u.split("/")[-1].split(":")[-1] if m == "POST" else "update" for m, u, _ in env.fake.writes()]
     assert kinds[0] == "update" and kinds[-1] == "batchClear"
 
 
-def test_integer_style_writes_date_text(env, db, settings, monkeypatch):
-    for r in range(1, 3):
-        env.tab.cell(r, 10).value = float(int(env.tab.cell(r, 10).value))
+def test_last_paid_date_is_integer_serial_and_matches_screen_text(env, db, settings, monkeypatch):
+    """GAS の setValues('yyyy-MM-dd') をシート（Etc/GMT）が日付のセルにした結果と同じ整数のシリアル値で書く。
+    画面へ返す文字（シートの時間帯の 0 時の String(Date)＝JST 9:00）と同じ瞬間になる。"""
     monkeypatch.setattr(summary_sheet, "summary_rows", lambda db, now: rows([("1001", 1, "2026-11-27", "")]))
-    assert summary_sheet.write(db, api=env.api, app_settings=settings)["lastPaidStyle"] == "integer"
+    assert summary_sheet.write(db, api=env.api, app_settings=settings)["ok"]
     cell = env.tab.get(1, 10)
-    assert cell.value == float((date(2026, 11, 27) - codec.EPOCH.date()).days) and cell.fmt["type"] == "DATE"
+    assert cell.value == (date(2026, 11, 27) - codec.EPOCH.date()).days and cell.fmt["type"] == "DATE"
+    instant = codec.serial_to_datetime(cell.value, "Etc/GMT")
+    assert instant.astimezone(codec.JST).hour == 9
+    assert last_paid_date_display("2026-11-27", "gas", "Etc/GMT") == "Fri Nov 27 2026 09:00:00 GMT+0900 (Japan Standard Time)"
 
 
 def test_compare_matches_the_current_tab(env, db):

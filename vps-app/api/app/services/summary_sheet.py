@@ -3,9 +3,10 @@
 - write(db): 見出し 12 列と全行を values.batchUpdate（A1:L<n+1>、USER_ENTERED）で書き、その後で余りの値を
   values.batchClear（A<n+2>:ZZ と M1:ZZ<n+1>）で消す（書いてから消すので、空の瞬間が無い）。行・タブは消さない・作らない。
   - 年度は元のセルの型（数なら数）、回数・作業員 ID は USER_ENTERED（数字だけなら数＝GAS の setValues と同じ）。
-  - 最終有給日: 今のタブの最終有給日のシリアル値の小数部を見て、同じ形で書く（06 5 節: 日付のシリアル値。.625 か整数かは
-    実物で決まる）。整数の形（既定）は 'yyyy-MM-dd' の文字を USER_ENTERED（GAS の setValues と同じ）。小数の形は
-    「その小数部で、瞬間の JST の日付が最終有給日になる」シリアル値を数で書き、今の列の表示形式を写す。
+  - 最終有給日: いつも整数のシリアル値の日付のセルで書く（空は空）。今の GAS は 'yyyy-MM-dd' の文字を setValues で書き、
+    シート（時間帯 Etc/GMT）がそれを日付のセル（整数＝シートの時間帯の 0 時）に変えている。VPS はその結果を
+    直接書き（数＋列の日付の表示形式。表示形式は今の列のものを写し、無ければ yyyy-mm-dd）、文字の読み取りの癖に頼らない。
+    画面へ返す文字（domain.summaries.last_paid_date_display。シートの時間帯の 0 時の String(Date)）と同じ瞬間になる。
   - '=' '+' '-' '@' で始まり数でない文字は、先頭に ' を付ける（式にしない）。
   - 歯止め: leave_requests が 0 行なら書かない。タブが無ければ作らずに止めて知らせる。書き込みの関所（write_gate）を守る。
 - mark_dirty(db): 書き込みの後の予約（1 次承認・編集・取消。W が同じトランザクションで呼ぶ）。lane='default' の仕事
@@ -16,7 +17,6 @@
 from __future__ import annotations
 
 import logging
-from collections import Counter
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -84,41 +84,19 @@ def user_entered(value: Any) -> Any:
     return formula_safe(js_string(value))
 
 
-def detect_last_paid_fraction(column: list, tz: Any) -> float | None:
-    """今の最終有給日の列（K2:K の UNFORMATTED）の数のセルで多い小数部。整数なら None。数のセルが無ければ None。"""
-    fracs = []
-    for row in column:
-        v = row[0] if row else ""
-        if codec.is_number(v):
-            frac = float(v) - int(float(v) // 1)
-            fracs.append(int(frac * 1_000_000 + 0.5) / 1_000_000)
-    if not fracs:
-        return None
-    best = Counter(fracs).most_common(1)[0][0]
-    return None if best in (0.0, 1.0) else best
+def last_paid_serial(d: date) -> int:
+    """最終有給日の日付のセルの値（整数のシリアル値＝シートの時間帯のその日の 0 時）。"""
+    return (d - codec.EPOCH.date()).days
 
 
-def last_paid_serial(d: date, frac: float, tz: Any) -> float:
-    """小数部 frac で、瞬間の JST の日付が d になるシリアル値。"""
-    base = (d - codec.EPOCH.date()).days
-    for day in (base - 1, base, base + 1):
-        s = day + frac
-        if codec.serial_to_jst_date(s, tz) == d:
-            return s
-    return base + frac  # pragma: no cover - 時間帯がずれすぎている
-
-
-def build_grid(rows: list[dict], frac: float | None, tz: Any) -> list[list]:
-    """見出し＋全行（USER_ENTERED で渡す値）。"""
+def build_grid(rows: list[dict]) -> list[list]:
+    """見出し＋全行（USER_ENTERED で渡す値）。最終有給日は整数のシリアル値（空は空）。"""
     out = [list(HEADER)]
     for r in rows:
         line = [user_entered(r.get(k)) for k in KEYS]
         lp = js_trim(js_string(r.get("lastPaidDate") or ""))
         parsed = codec.parse_date_text(lp) if lp else None
-        if frac is not None and parsed is not None:
-            line[LAST_PAID_COL] = last_paid_serial(parsed, frac, tz)
-        else:
-            line[LAST_PAID_COL] = formula_safe(lp)
+        line[LAST_PAID_COL] = last_paid_serial(parsed) if parsed is not None else formula_safe(lp)
         out.append(line)
     return out
 
@@ -130,7 +108,7 @@ def _norm(col: int, value: Any, tz: Any, *, from_sheet: bool) -> str:
     if codec.is_blank(value):
         return ""
     if col == LAST_PAID_COL:
-        if codec.is_number(value):  # 日付のセル（.625 の行も整数の行も、瞬間の JST の日付）
+        if codec.is_number(value):  # 日付のセル（移行前の .625 の行も整数の行も、瞬間の JST の日付）
             return codec.serial_to_jst_date(value, tz).isoformat()
         d = codec.parse_date_text(js_string(value).lstrip("'"))
         return d.isoformat() if d else js_string(value)
@@ -145,7 +123,7 @@ def _norm(col: int, value: Any, tz: Any, *, from_sheet: bool) -> str:
 
 def compare(expected_rows: list[dict], sheet_values: list[list], tz: Any) -> list[dict]:
     """DB から作った集計と、タブの UNFORMATTED の値（1 行目から）を 12 列で比べる。差の一覧。"""
-    expected = build_grid(expected_rows, None, tz)
+    expected = build_grid(expected_rows)
     diffs = []
     height = max(len(expected), len(sheet_values))
     for r in range(height):
@@ -202,7 +180,7 @@ def _record(db: Session, started: datetime, result: dict) -> None:
 
 def write(db: Session, *, api: SheetsApi | None = None, app_settings: Any = None, now: datetime | None = None,
           gate: bool = True) -> dict:
-    """V_LEAVE_SUMMARY を DB から書き直す。戻り値 {ok, rows, lastPaidStyle} か {ok: False, ...}。commit は呼ぶ側。"""
+    """V_LEAVE_SUMMARY を DB から書き直す。戻り値 {ok, rows} か {ok: False, ...}。commit は呼ぶ側。"""
     settings = _settings(app_settings)
     started = timeutil.now_utc()
     now = now or started
@@ -219,7 +197,6 @@ def write(db: Session, *, api: SheetsApi | None = None, app_settings: Any = None
         return result
     rows = summary_rows(db, now)
     sid = settings.db_spreadsheet_id
-    tz = settings.db_sheet_tz
     if api is None:
         api = SheetsApi.for_db(db, settings)
     meta = api.get_spreadsheet(sid)
@@ -227,13 +204,12 @@ def write(db: Session, *, api: SheetsApi | None = None, app_settings: Any = None
         result["error"] = f"タブ「{TAB}」がありません（タブは作りません）"
         _record(db, started, result)
         return result
-    frac = detect_last_paid_fraction(api.get_values(sid, f"{quote_sheet(TAB)}!K2:K", "UNFORMATTED_VALUE"), tz)
-    grid = build_grid(rows, frac, tz)
+    grid = build_grid(rows)
     n = len(grid)
     q = quote_sheet(TAB)
     p = PURPOSE
     api.values_update(sid, f"{q}!A1:L{n}", grid, tab=TAB, purpose=p, input_option="USER_ENTERED")
-    if frac is not None and n > 1:
+    if n > 1:  # 数で書いたシリアル値を日付に見せる（今の列の表示形式を写す）
         fmt = _column_format(api, sid)
         sheet_id = sheet_id_by_title(meta, TAB)
         cells = [{"values": [{"userEnteredFormat": {"numberFormat": fmt}}]} for _ in range(n - 1)]
@@ -241,7 +217,7 @@ def write(db: Session, *, api: SheetsApi | None = None, app_settings: Any = None
                                                 "rows": cells, "fields": "userEnteredFormat.numberFormat"}}],
                          tab=TAB, purpose=p)
     api.values_batch_clear(sid, [f"{q}!A{n + 1}:ZZ", f"{q}!M1:ZZ{n}"], tab=TAB, purpose=p)
-    result.update({"ok": True, "rows": n - 1, "lastPaidStyle": "integer" if frac is None else f"fraction {frac}"})
+    result.update({"ok": True, "rows": n - 1})
     _record(db, started, result)
     return result
 
