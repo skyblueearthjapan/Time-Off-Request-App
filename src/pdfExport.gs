@@ -5,6 +5,7 @@
  * 実行前に REQ_ID を実在のものに書き換えてください
  */
 function test_generatePdf() {
+  assertNotMigrated_();
   var reqId = 'LV-20260307-001';  // ← 実在のREQ_IDに変更
   var approverEmail = 'imaizumi@lineworks-local.info'; // ← 承認者メール
   try {
@@ -22,6 +23,7 @@ function test_generatePdf() {
  * M_STAMPの同期状態とスタンプファイルの存在確認
  */
 function test_stampLookup() {
+  assertNotMigrated_();
   var testEmail = 'imaizumi@lineworks-local.info'; // ← テスト対象メール
   console.log('=== 電子印テスト開始 ===');
 

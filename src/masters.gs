@@ -75,6 +75,7 @@ function loadWorkersByDept_(deptId) {
 // ====== ログインユーザーの作業員情報取得 ======
 
 function api_getWorkerInfo() {
+  assertNotMigrated_();
   var email = Session.getActiveUser().getEmail();
   if (!email) return null;
   email = email.toLowerCase();
@@ -161,6 +162,7 @@ function getStampFileId_(email) {
  * syncStampMaster で同期済みのローカルシートを参照
  */
 function api_getApproverList() {
+  assertNotMigrated_();
   try {
     var ss = getDb_();
     var sh = ss.getSheetByName(SHEET.STAMP);
@@ -188,10 +190,12 @@ function api_getApproverList() {
 // ====== API（google.script.run用） ======
 
 function api_getDeptList() {
+  assertNotMigrated_();
   return loadDeptList_();
 }
 
 function api_getWorkersByDept(deptId) {
+  assertNotMigrated_();
   if (!deptId) return [];
   return loadWorkersByDept_(deptId);
 }
@@ -200,6 +204,7 @@ function api_getWorkersByDept(deptId) {
  * LOOKUPデータを一括取得（申請モーダル用）
  */
 function api_getLookupData() {
+  assertNotMigrated_();
   return {
     leaveKubun: ['全日休', '半日休'],
     halfDayType: ['午前', '午後'],
@@ -218,6 +223,7 @@ function api_getLookupData() {
  * @return {Array<{date, label}>}
  */
 function api_getHolidayDays(workerId) {
+  assertNotMigrated_();
   // M_CALENDARからデータ取得
   var calMap = {};
   var calCoveredDates = {};
@@ -417,6 +423,7 @@ function getHolidaysForYear_(y) {
  * 勤務日 = 平日(月〜金)で祝日でない日 + 出勤土曜
  */
 function api_getWorkingDays() {
+  assertNotMigrated_();
   var sh = getDb_().getSheetByName(SHEET.CALENDAR);
   if (!sh || sh.getLastRow() < 2) return [];
 
@@ -478,6 +485,7 @@ function api_getWorkingDays() {
  * @return {Array<{date:string, dow:number, label:string}>}
  */
 function api_getPastWorkingDays(yearMonth) {
+  assertNotMigrated_();
   var today = new Date();
   var todayKey = fmtDate_(today);
 

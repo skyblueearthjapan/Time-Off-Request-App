@@ -10,6 +10,7 @@
  * @return {Object} personalモード or listモード
  */
 function api_getLeaveStatusSearch(fyYear, deptId, workerId) {
+  assertNotMigrated_();
   var fy = fyYear ? Number(fyYear) : computeFiscalYear_(new Date());
 
   // 対象部署の決定（deptId は部署名そのもの）

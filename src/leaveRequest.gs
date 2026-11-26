@@ -129,6 +129,7 @@ function validateSubstituteUniqueness_(workerId, subDateStr, excludeReqId) {
  *         leaveDate, leaveType, substituteDate, specialReason, paidDetail, additionalDetail }
  */
 function api_submitLeaveRequest(data) {
+  assertNotMigrated_();
   var lock = LockService.getScriptLock();
   lock.waitLock(15000);
   try {
@@ -237,6 +238,7 @@ function api_submitLeaveRequest(data) {
  * REQ_IDで申請データ取得
  */
 function api_getLeaveRequestById(reqId) {
+  assertDbOpenAllowed_();
   if (!reqId) return null;
 
   // リトライ付き（書込み直後の読取り遅延対策）
@@ -326,6 +328,7 @@ function api_getLeaveRequestById(reqId) {
  * デバッグ用：T_LEAVE_REQUESTの状態を確認（GASエディタから直接実行）
  */
 function debug_checkLeaveRequestSheet() {
+  assertNotMigrated_();
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var lastRow = sh.getLastRow();
@@ -354,6 +357,7 @@ function debug_checkLeaveRequestSheet() {
  * 休暇予定一覧（本日以降 & leaveDate >= 今日0:00）
  */
 function api_getUpcomingLeaves(deptId, workerId) {
+  assertNotMigrated_();
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var idx = info.idx;
@@ -417,6 +421,7 @@ function api_getUpcomingLeaves(deptId, workerId) {
  * TOP画面の「承認待ち一覧」セクション用
  */
 function api_getAllPendingRequests() {
+  assertNotMigrated_();
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
   var sh = info.sh;
   var idx = info.idx;
@@ -469,6 +474,7 @@ function api_getAllPendingRequests() {
  * @param {string} approverEmail - 承認者メールアドレス（StampMap検索用）
  */
 function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
+  assertNotMigrated_();
   if (!reqId) throw new Error('REQ_IDが指定されていません。');
 
   var lock = LockService.getScriptLock();
@@ -563,6 +569,7 @@ function api_approveLeaveRequest(reqId, signBase64, approverEmail) {
  * @return {Object[]} 1次承認済み・2次未承認の申請一覧
  */
 function api_getPending2ndApprovals() {
+  assertNotMigrated_();
   if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません（総務または管理者のみ）');
 
   var info = getSheetHeaderIndex_(SHEET.LEAVE_REQUEST, 1);
@@ -617,6 +624,7 @@ function api_getPending2ndApprovals() {
  * @return {Object} { ok: boolean }
  */
 function api_approveLeaveRequest2(reqId, approver2Email) {
+  assertNotMigrated_();
   if (!reqId) throw new Error('REQ_IDが指定されていません。');
   if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません（総務または管理者のみ）');
 
@@ -733,6 +741,7 @@ function api_approveLeaveRequest2(reqId, approver2Email) {
  * @return {Object} { ok: boolean, results: [...] }
  */
 function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
+  assertNotMigrated_();
   if (!isSomu_() && !isAdmin_()) throw new Error('権限がありません');
   if (!reqIds || !reqIds.length) throw new Error('申請IDが指定されていません');
   if (reqIds.length > 20) throw new Error('一度に承認できるのは20件までです');
@@ -850,6 +859,7 @@ function api_approveLeaveRequest2Batch(reqIds, approver2Email) {
 // 承認済みの場合は申請中に戻す（再承認必要）。PDF削除・台帳削除も行う。
 
 function api_editLeaveRequest(reqId, patch) {
+  assertNotMigrated_();
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -968,6 +978,7 @@ function api_editLeaveRequest(reqId, patch) {
 // ====== 申請削除（キャンセル）API ======
 
 function api_deleteLeaveRequest(reqId) {
+  assertNotMigrated_();
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {

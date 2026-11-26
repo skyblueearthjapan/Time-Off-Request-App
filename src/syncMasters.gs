@@ -11,6 +11,7 @@ const SYNC_MAP = [
  * ※ 部署一覧は作業員マスタの「部署」列からユニーク取得するためM_DEPTは不要
  */
 function syncAllMasters() {
+  if (skipBecauseMigrated_('syncAllMasters')) return;
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
@@ -119,6 +120,7 @@ function syncAllMasters() {
  *           CALENDAR_SOURCE_SHEET = 同期元の社内カレンダーシート名
  */
 function syncCalendarMaster() {
+  assertNotMigrated_();
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
@@ -169,6 +171,7 @@ function syncCalendarMaster() {
  * 外部SS（残業・休日出勤申請app）の StampMap シートから取得
  */
 function syncStampMaster() {
+  assertNotMigrated_();
   var settings = getSettings_();
   var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
   if (!sourceId) {
@@ -211,6 +214,7 @@ function syncStampMaster() {
  * 外部SS（残業・休日出勤申請app）の DeptApprovers シートから取得
  */
 function syncDeptApprovers() {
+  assertNotMigrated_();
   var settings = getSettings_();
   var sourceId = normalize_(settings['CALENDAR_SOURCE_SSID']);
   if (!sourceId) {

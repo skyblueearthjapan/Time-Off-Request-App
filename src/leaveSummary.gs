@@ -2,6 +2,7 @@
 
 /** メニューから呼べる公開ラッパー */
 function rebuildLeaveSummary() {
+  assertNotMigrated_();
   var count = rebuildLeaveSummary_();
   var msg = 'サマリー再構築が完了しました。(' + count + '件)';
   Logger.log(msg);
@@ -153,6 +154,7 @@ function computeWarnLevel_(paidCount, fiscalYear) {
  * 上長ビュー: 指定部署の年度別取得状況
  */
 function api_getAdminBossView(deptId, fyYear) {
+  assertNotMigrated_();
   if (!canAccessAdmin_()) throw new Error('権限がありません');
   if (!fyYear) {
     fyYear = computeFiscalYear_(new Date());
@@ -201,6 +203,7 @@ function api_getAdminBossView(deptId, fyYear) {
  * 総務ビュー: 全部署の年度別取得状況
  */
 function api_getAdminSomuView(fyYear, deptFilter) {
+  assertNotMigrated_();
   if (!canAccessAdmin_()) throw new Error('権限がありません');
   return api_getAdminBossView(deptFilter || '', fyYear);
 }
@@ -426,6 +429,7 @@ function buildAdminViewData_(depts, fyYear) {
  * @return {Object} { workers: [...], deptNames: [...] }
  */
 function api_getDeptAdminView(fyYear, selectedDepts) {
+  assertNotMigrated_();
   var admin = isAdmin_();
   if (!admin && !isDeptApprover_()) throw new Error('部署承認者の権限がありません。');
 
@@ -453,6 +457,7 @@ function api_getDeptAdminView(fyYear, selectedDepts) {
  * @return {Object[]} 作業員ごとの取得状況配列
  */
 function api_getSomuAdminView(fyYear, deptFilter) {
+  assertNotMigrated_();
   if (!isSomu_() && !isAdmin_()) {
     throw new Error('権限がありません（総務または管理者のみ）');
   }

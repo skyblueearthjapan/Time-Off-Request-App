@@ -102,22 +102,27 @@ function getDeptApproverDeptsForEmail_(email) {
 
 // ====== API（google.script.run用） ======
 function api_canAccessAdmin() {
+  assertNotMigrated_();
   return canAccessAdmin_();
 }
 
 function api_isAdmin() {
+  assertNotMigrated_();
   return isAdmin_();
 }
 
 function api_isSomu() {
+  assertNotMigrated_();
   return isSomu_();
 }
 
 function api_isDeptApprover() {
+  assertNotMigrated_();
   return isDeptApprover_();
 }
 
 function api_getDeptApproverDepts() {
+  assertNotMigrated_();
   return getDeptApproverDepts_();
 }
 
@@ -128,6 +133,7 @@ function api_getDeptApproverDepts() {
  * @return {Object} { isAdmin, currentEmail, profiles: [{ email, name, depts }] }
  */
 function api_getApproverProfiles() {
+  assertNotMigrated_();
   var email = Session.getActiveUser().getEmail().toLowerCase();
   var admin = isAdmin_();
 
@@ -185,6 +191,7 @@ function api_getApproverProfiles() {
  * @return {Object} { email, name }
  */
 function api_getCurrentApproverInfo() {
+  assertNotMigrated_();
   var email = Session.getActiveUser().getEmail().toLowerCase();
   var name = email;
   try {

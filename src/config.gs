@@ -101,6 +101,7 @@ function fmtDate_(d, pattern) {
 }
 
 function getDb_() {
+  assertDbOpenAllowed_();
   return SpreadsheetApp.getActive();
 }
 
