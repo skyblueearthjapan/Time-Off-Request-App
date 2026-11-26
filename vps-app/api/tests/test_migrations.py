@@ -17,17 +17,33 @@ ALL_TABLES = {
     "sessions", "google_credentials", "idempotency_keys", "jobs", "sheet_sync_state", "sync_runs", "audit_log",
 }
 # T_LEAVE_REQUEST の 26 列（本番の英語の見出し）と DB の列の対応
-SHEET_COLUMNS = {
-    "REQ_ID": "req_id", "FY_START_YEAR": "fy_start_year", "STATUS": "status", "APPLIED_AT": "applied_at",
+SHEET_COLUMNS = {  # 仕様書 5-1 の表
+    "REQ_ID": "req_id", "FY_START_YEAR": "fiscal_year", "STATUS": "status", "APPLIED_AT": "applied_at",
     "DEPT_ID": "dept_id", "DEPT_NAME": "dept_name", "WORKER_ID": "worker_id", "WORKER_NAME": "worker_name",
-    "LEAVE_DATE": "leave_date", "DAY_TYPE": "day_type", "HALF_TYPE": "half_type", "LEAVE_KIND": "leave_kind",
-    "SUBSTITUTE_FOR_WORK_DATE": "substitute_for_work_date", "SPECIAL_REASON_REF": "special_reason_ref",
-    "SPECIAL_REASON_TEXT": "special_reason_text", "PAIDLEAVE_DETAIL": "paidleave_detail",
-    "DETAIL_FREE": "detail_free", "APPROVED_AT": "approved_at", "SIGN_IMAGE_URL": "sign_image_url",
-    "PDF_URL": "pdf_url", "CREATED_BY_EMAIL": "created_by_email", "UPDATED_AT": "updated_at",
+    "LEAVE_DATE": "leave_date", "DAY_TYPE": "leave_kubun", "HALF_TYPE": "half_day_type", "LEAVE_KIND": "leave_type",
+    "SUBSTITUTE_FOR_WORK_DATE": "substitute_date", "SPECIAL_REASON_REF": "special_reason_ref",
+    "SPECIAL_REASON_TEXT": "special_reason", "PAIDLEAVE_DETAIL": "paid_detail",
+    "DETAIL_FREE": "additional_detail", "APPROVED_AT": "approved_at", "SIGN_IMAGE_URL": "sign_image_url",
+    "PDF_URL": "pdf_url", "CREATED_BY_EMAIL": "created_by_email", "UPDATED_AT": "updated_at_text",
     "APPROVED_BY1_EMAIL": "approved_by1_email", "APPROVED_BY2": "approved_by2",
     "APPROVED_BY2_EMAIL": "approved_by2_email", "APPROVED_AT2": "approved_at2",
 }
+# 日付・日時のセルが文字だったときの元の文字（cell_kinds が string の行）
+TEXT_TWINS = ("applied_at_text", "leave_date_text", "substitute_date_text", "approved_at_text", "approved_at2_text")
+# 5-2 の表の列
+MASTER_COLUMNS = {
+    "settings": {"key", "value", "sheet_row"},
+    "lookup": {"sheet_row", "category", "value", "sort_text"},
+    "workers": {"sort_order", "cells"},
+    "calendar": {"sort_order", "date", "kubun", "cells"},
+    "stamps": {"sort_order", "col_a", "col_b", "col_c", "cells"},
+    "dept_approvers": {"sort_order", "col_a", "col_b", "col_c", "col_d", "col_e"},
+}
+# 5-3 の jobs・sheet_sync_state の列
+JOB_COLUMNS = {"kind", "lane", "priority", "request_id", "args_json", "requires_json", "guard_json", "state",
+               "attempts", "run_after", "leased_until", "last_error", "result_json", "created_at", "updated_at"}
+SYNC_STATE_COLUMNS = {"table_name", "pk", "desired_version", "synced_version", "synced_values", "state", "attempts",
+                      "next_try_at", "last_error", "first_dirty_at", "last_synced_at", "seq"}
 
 
 def _config(url: str) -> Config:
@@ -62,6 +78,7 @@ def test_upgrade_head_matches_models_and_downgrades(tmp_path):
     assert set(Base.metadata.tables) == ALL_TABLES
     assert {"row_version", "sheet_row", "cell_kinds", "pdf_file_id", "sign_png", "leave_date_text"} <= sync_cols
     assert set(SHEET_COLUMNS.values()) <= sync_cols
+    assert set(TEXT_TWINS) <= sync_cols
 
     command.downgrade(cfg, "base")
     engine = create_engine(url)
@@ -71,24 +88,33 @@ def test_upgrade_head_matches_models_and_downgrades(tmp_path):
 
 
 def test_leave_requests_types():
-    from sqlalchemy import Date, Integer, LargeBinary
+    from sqlalchemy import Date, LargeBinary, Text
 
     cols = Base.metadata.tables["leave_requests"].c
     assert len(SHEET_COLUMNS) == 26
-    for name in ("leave_date", "substitute_for_work_date"):
+    for name in ("leave_date", "substitute_date"):
         assert isinstance(cols[name].type, Date) and cols[name].nullable
-    for name in ("applied_at", "approved_at", "updated_at", "approved_at2"):
+    for name in ("applied_at", "approved_at", "approved_at2"):
         assert cols[name].type.__class__.__name__ == "UTCDateTime" and cols[name].nullable
-    assert isinstance(cols.fy_start_year.type, Integer)
+    for name in ("fiscal_year", "updated_at_text", *TEXT_TWINS):
+        assert isinstance(cols[name].type, Text) and not cols[name].nullable
     assert isinstance(cols.sign_png.type, LargeBinary) and cols.sign_png.nullable
     assert cols.req_id.primary_key
 
 
-def test_master_tables_keep_row_order_and_all_cells():
-    for name in ("workers", "calendar", "stamps", "dept_approvers", "lookup"):
-        cols = Base.metadata.tables[name].c
-        assert cols.sheet_row.primary_key, name
-        assert cols.cells.nullable is False, name
+def test_master_tables_match_spec_columns():
+    for name, expected in MASTER_COLUMNS.items():
+        assert set(Base.metadata.tables[name].c.keys()) == expected, name
+    for name in ("workers", "calendar", "stamps", "dept_approvers"):
+        assert Base.metadata.tables[name].c.sort_order.primary_key, name
+    assert Base.metadata.tables["lookup"].c.sheet_row.primary_key
+    assert Base.metadata.tables["settings"].c.key.primary_key
+
+
+def test_foundation_tables_have_spec_columns():
+    assert JOB_COLUMNS <= set(Base.metadata.tables["jobs"].c.keys())
+    assert SYNC_STATE_COLUMNS <= set(Base.metadata.tables["sheet_sync_state"].c.keys())
+    assert "mail_log" not in Base.metadata.tables
 
 
 def test_a_tables_have_row_sync_columns():

@@ -50,3 +50,41 @@ def test_js_sort_key_is_utf16_code_unit_order():
     assert js_sort_key("ア") < js_sort_key("𠮷") < js_sort_key("ｱ")
     assert sorted(["𠮷", "ｱ"]) == ["ｱ", "𠮷"]  # Python の既定の並びは JS と逆になる例
     assert js_sort_key("B") < js_sort_key("a")
+
+
+# ===== 仕様書 10-2・12-2 F の約束 =====
+
+
+def test_spec_examples():
+    from app.jsutil import sheet_readback
+
+    assert normalize_gas("  ＡＢｃ１２３　") == "ABc123"
+    assert js_string(2026.0) == "2026"
+    assert js_string(2 ** 64 * 1.0) == "18446744073709552000"  # JS の String と同じ最短の桁
+    assert sheet_readback("0042") == ("42", "number")
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("1.50", ("1.5", "number")), ("+5", ("5", "number")), ("-3", ("-3", "number")), (".5", ("0.5", "number")),
+    ("5.", ("5", "number")), ("1e5", ("1e5", "string")), (" 4", (" 4", "string")), ("４", ("４", "string")),
+    ("2026-11-26", ("2026-11-26", "string")), ("=1+1", ("=1+1", "string")), ("", ("", "string")),
+])
+def test_sheet_readback(text, expected):
+    from app.jsutil import sheet_readback
+
+    assert sheet_readback(text) == expected
+
+
+def test_collate_returns_sign_and_orders_like_locale_compare():
+    import functools
+
+    from app.jsutil import collate_default, collate_ja
+
+    for fn in (collate_default, collate_ja):
+        assert fn("a", "a") == 0 and fn("a", "b") == -1 and fn("b", "a") == 1
+        # 大文字小文字は 1 次で同じ（JS の既定の sort と違い a < B）、記号 < 数字 < 文字、数字は桁ごと
+        items = ["b", "B", "a", "A", "9", "10", "-x"]
+        assert sorted(items, key=functools.cmp_to_key(fn)) == ["-x", "10", "9", "a", "A", "b", "B"]
+    # 日付の文字（yyyy/MM/dd・MM/dd HH:mm）は桁がそろっているので文字の順と同じ
+    dates = ["2026/12/01", "2026/01/15", "2025/12/31", "12/01 09:00", "01/02 10:30"]
+    assert sorted(dates, key=functools.cmp_to_key(collate_default)) == sorted(dates)

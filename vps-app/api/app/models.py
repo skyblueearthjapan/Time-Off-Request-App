@@ -1,19 +1,21 @@
-"""DB の表。担当 F が全表を作る（alembic 0001_initial_schema と同じ形）。足りない列は後の担当が 0002 で足す。
+"""DB の表。担当 F が全表を作る（alembic 0001_initial_schema と同じ形。列名は仕様書 5 章が取り決め）。
 
 共通:
 - 文字の列は NOT NULL DEFAULT ''（空とシートの空を同じに扱う）。
 - 日付は date、日時は UTCDateTime（timestamptz。時差のない値は拒む）。
 - enum は CheckConstraint。
-- 業務の表（A 区分: leave_requests＝T_LEAVE_REQUEST）は row_version（書くたびに +1。sheet_queue.mark_dirty）、
-  sheet_row（シートの行番号。まだ書いていない新しい行は NULL）、cell_kinds（型が混ざる列の行ごとの型）を持つ。
-- マスタ・M_LOOKUP の表は、元のタブの行番号（sheet_row。1 行目の見出しも行として持つ）と、元の列を全部
-  （cells: 1 行の値を左から順に並べた JSON の配列）持つ。よく使う列は名前の付いた列にも写す。
+- 業務の表（leave_requests＝T_LEAVE_REQUEST）は row_version（書くたびに +1。sheet_queue.mark_dirty）、
+  sheet_row（シートの行番号。まだ書いていない新しい行は NULL）、cell_kinds（型が混ざる列の行ごとの型。
+  serial／string／number）を持つ。
+- 設定とマスタの表（5-2）はデータ行だけを持つ（見出しの行は持たない）。
 - シートの値は正規化せずに生のまま入れる（GAS が normalize_ するところは業務の側で jsutil.normalize_gas を通す）。
 """
 from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any
+
+_Date = date  # 列名 date（calendar.date）と型の名前が重ならないように
 
 from sqlalchemy import (
     JSON,
@@ -59,10 +61,6 @@ def _text(**kw: Any):
     return mapped_column(Text, nullable=False, default="", server_default="", **kw)
 
 
-def _int_null():
-    return mapped_column(Integer, nullable=True)
-
-
 def _row_version():
     return mapped_column(Integer, nullable=False, default=1, server_default="1")
 
@@ -91,53 +89,52 @@ def _ts_null():
 
 
 class LeaveRequest(Base):
-    """シート T_LEAVE_REQUEST（見出し 1 行目。本番は英語の見出し 26 列。列は見出しの文字で対応させる）。
+    """シート T_LEAVE_REQUEST（見出し 1 行目。本番は英語の見出し 26 列。列は見出しの文字で対応させる。仕様書 5-1）。
 
-    シートに無い列: pdf_file_id（GAS が PDF を作ったときの Drive の ID）、sign_png（手書きサインの PNG を GAS へ
-    渡すまで置く）、*_text（日付にならない元の文字）、source_*（ステージングへの移行で空にした本番の値）。
+    - 日付・日時の列は、セルが日付（シリアル値）なら date／timestamptz に、文字のセルなら *_text に元の文字を入れる。
+      どちらだったかは cell_kinds（{"leave_date": "serial"|"string", ...}）に持つ。
+    - fiscal_year は JS の String(値)（cell_kinds.fiscal_year が number／string）。計算し直さずに移す。
+    シートに無い列: pdf_file_id（GAS の返事の pdfFileId）、sign_png（手書きサインの PNG。afterApprove1 が済んだら NULL）。
     """
 
     __tablename__ = "leave_requests"
 
-    req_id: Mapped[str] = mapped_column(String(64), primary_key=True)  # A REQ_ID（LV-yyyyMMdd-NNN）
-    fy_start_year: Mapped[int | None] = _int_null()  # B FY_START_YEAR（年度。3/16 始まりの年）
-    status: Mapped[str] = mapped_column(Text, nullable=False, default="申請中", server_default="申請中")  # C STATUS
-    applied_at: Mapped[datetime | None] = _ts_null()  # D APPLIED_AT
-    dept_id: Mapped[str] = _text()  # E DEPT_ID
-    dept_name: Mapped[str] = _text()  # F DEPT_NAME
-    worker_id: Mapped[str] = _text()  # G WORKER_ID
-    worker_name: Mapped[str] = _text()  # H WORKER_NAME
-    leave_date: Mapped[date | None] = _date_null()  # I LEAVE_DATE
-    leave_date_text: Mapped[str] = _text()  # 日付にならない元の文字
-    day_type: Mapped[str] = _text()  # J DAY_TYPE（全日休・半日休）
-    half_type: Mapped[str] = _text()  # K HALF_TYPE（午前・午後。全日休でも値が残る行がある）
-    leave_kind: Mapped[str] = _text()  # L LEAVE_KIND（有給消化（私用）・振替休暇・特別休暇）
-    substitute_for_work_date: Mapped[date | None] = _date_null()  # M SUBSTITUTE_FOR_WORK_DATE
-    substitute_for_work_date_text: Mapped[str] = _text()
-    special_reason_ref: Mapped[str] = _text()  # N SPECIAL_REASON_REF
-    special_reason_text: Mapped[str] = _text()  # O SPECIAL_REASON_TEXT
-    paidleave_detail: Mapped[str] = _text()  # P PAIDLEAVE_DETAIL
-    detail_free: Mapped[str] = _text()  # Q DETAIL_FREE
-    approved_at: Mapped[datetime | None] = _ts_null()  # R APPROVED_AT
-    sign_image_url: Mapped[str] = _text()  # S SIGN_IMAGE_URL（GAS が書く）
-    pdf_url: Mapped[str] = _text()  # T PDF_URL（GAS が書く）
-    created_by_email: Mapped[str] = _text()  # U CREATED_BY_EMAIL
-    updated_at: Mapped[datetime | None] = _ts_null()  # V UPDATED_AT
-    approved_by1_email: Mapped[str] = _text()  # W APPROVED_BY1_EMAIL
-    approved_by2: Mapped[str] = _text()  # X APPROVED_BY2（名前）
-    approved_by2_email: Mapped[str] = _text()  # Y APPROVED_BY2_EMAIL
-    approved_at2: Mapped[datetime | None] = _ts_null()  # Z APPROVED_AT2
+    req_id: Mapped[str] = mapped_column(String(64), primary_key=True)  # REQ_ID（LV-yyyyMMdd-NNN）
+    fiscal_year: Mapped[str] = _text()  # FY_START_YEAR（年度）
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="申請中", server_default="申請中")  # STATUS
+    applied_at: Mapped[datetime | None] = _ts_null()  # APPLIED_AT（申請日時）
+    applied_at_text: Mapped[str] = _text()
+    dept_id: Mapped[str] = _text()  # DEPT_ID
+    dept_name: Mapped[str] = _text()  # DEPT_NAME
+    worker_id: Mapped[str] = _text()  # WORKER_ID（cell_kinds で数か文字か）
+    worker_name: Mapped[str] = _text()  # WORKER_NAME
+    leave_date: Mapped[date | None] = _date_null()  # LEAVE_DATE（休暇日）
+    leave_date_text: Mapped[str] = _text()
+    leave_kubun: Mapped[str] = _text()  # DAY_TYPE（休暇区分: 全日休・半日休）
+    half_day_type: Mapped[str] = _text()  # HALF_TYPE（半日区分: 午前・午後。全日休でも値が残る行がある）
+    leave_type: Mapped[str] = _text()  # LEAVE_KIND（休暇種類: 有給消化（私用）・振替休暇・特別休暇）
+    substitute_date: Mapped[date | None] = _date_null()  # SUBSTITUTE_FOR_WORK_DATE（振替元出勤日）
+    substitute_date_text: Mapped[str] = _text()
+    special_reason_ref: Mapped[str] = _text()  # SPECIAL_REASON_REF（N 区分）
+    special_reason: Mapped[str] = _text()  # SPECIAL_REASON_TEXT（特別理由）
+    paid_detail: Mapped[str] = _text()  # PAIDLEAVE_DETAIL（有給詳細）
+    additional_detail: Mapped[str] = _text()  # DETAIL_FREE（追加詳細。N 区分）
+    approved_at: Mapped[datetime | None] = _ts_null()  # APPROVED_AT（承認日時）
+    approved_at_text: Mapped[str] = _text()
+    sign_image_url: Mapped[str] = _text()  # SIGN_IMAGE_URL（G 区分: GAS が書く）
+    pdf_url: Mapped[str] = _text()  # PDF_URL（G 区分: GAS が書く）
+    created_by_email: Mapped[str] = _text()  # CREATED_BY_EMAIL
+    updated_at_text: Mapped[str] = _text()  # UPDATED_AT（全行が空。持つだけ。N 区分）
+    approved_by1_email: Mapped[str] = _text()  # APPROVED_BY1_EMAIL
+    approved_by2: Mapped[str] = _text()  # APPROVED_BY2（2 次承認者名）
+    approved_by2_email: Mapped[str] = _text()  # APPROVED_BY2_EMAIL
+    approved_at2: Mapped[datetime | None] = _ts_null()  # APPROVED_AT2（2 次承認日時）
+    approved_at2_text: Mapped[str] = _text()
 
     # シートに無い列
-    pdf_file_id: Mapped[str] = _text()  # GAS が PDF を作ったときの Drive の ID（ゴミ箱へ移すため）
-    # PDF の列を空にした操作の、まだゴミ箱へ移していない前の ID（GAS の仕事が使う）
-    old_pdf_file_id_pending: Mapped[str] = _text()
-    # 手書きサインの PNG（1 次承認で受け取り、GAS がサイン画像を保存したら消す）
+    pdf_file_id: Mapped[str] = _text()  # GAS の返事の pdfFileId（移行では PDF_URL の /d/<id>/ から）
+    # 手書きサインの PNG（1 次承認で入れ、internal.afterApprove1 が済んだら NULL に戻す）
     sign_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    # ステージングへの移行で空にした本番の値（参照用。仕事は使わない。シートには書かない）
-    source_pdf_file_id: Mapped[str] = _text()
-    source_pdf_url: Mapped[str] = _text()
-    source_sign_image_url: Mapped[str] = _text()
 
     row_version: Mapped[int] = _row_version()
     sheet_row: Mapped[int | None] = _sheet_row()
@@ -166,73 +163,63 @@ class Setting(Base):
 
 
 class Lookup(Base):
-    """M_LOOKUP（1 行目見出し: カテゴリ・値・SORT）。"""
+    """M_LOOKUP（1 行目見出し: カテゴリ・値・SORT）。データ行だけを持つ。"""
 
     __tablename__ = "lookup"
 
     sheet_row: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    category: Mapped[str] = _text()  # A カテゴリ
-    value: Mapped[str] = _text()  # B 値
-    sort: Mapped[str] = _text()  # C SORT（文字のまま。数は業務の側で読む）
-    cells: Mapped[list] = _cells()
+    category: Mapped[str] = _text()  # カテゴリ（生）
+    value: Mapped[str] = _text()  # 値（生）
+    sort_text: Mapped[str] = _text()  # SORT（文字のまま。数は業務の側で Number(値 or 0)）
 
 
-# ===== マスタの表（C 区分。元から作り、DB のタブにも同じ形で書く） =====
+# ===== マスタの表（M 区分。master_sync が元から DB のタブへ写し、config_sync が DB のタブから取り込む） =====
+# sort_order はデータ行の順（2 行目＝1 から）。見出しの行は持たない。
 
 
 class Worker(Base):
-    """作業員マスタ（元: マスタ元の「作業員マスタ」。見出し: 作業員コード・氏名・部署・担当業務・拠点・スタッフ種類）。"""
+    """作業員マスタ。cells は見出し付きの 1 行（{見出し: 値}、GAS が読む形）。4-4-a は見出しの文字で読む。"""
 
     __tablename__ = "workers"
 
-    sheet_row: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    worker_code: Mapped[str] = _text()  # 作業員コード
-    worker_name: Mapped[str] = _text()  # 氏名
-    dept: Mapped[str] = _text()  # 部署
-    duty: Mapped[str] = _text()  # 担当業務
-    site: Mapped[str] = _text()  # 拠点
-    staff_type: Mapped[str] = _text()  # スタッフ種類
-    cells: Mapped[list] = _cells()
+    sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    cells: Mapped[dict] = _cell_kinds()
 
 
 class CalendarDay(Base):
-    """M_CALENDAR（元: 読み先の「社内カレンダーマスタ」。見出し: 日付・区分・曜日・備考）。"""
+    """M_CALENDAR（見出し: 日付・区分・曜日・備考）。"""
 
     __tablename__ = "calendar"
 
-    sheet_row: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    day: Mapped[date | None] = _date_null()  # A 日付
-    day_text: Mapped[str] = _text()  # 日付にならない元の文字（見出しの行も）
-    kind: Mapped[str] = _text()  # B 区分（休日・祝日・出勤土曜）
-    weekday: Mapped[str] = _text()  # C 曜日（Sat など。文字のまま）
-    note: Mapped[str] = _text()  # D 備考
-    cells: Mapped[list] = _cells()
+    sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    date: Mapped[_Date | None] = _date_null()  # 日付のセルを JST の日付にした値（読めない行は NULL）
+    kubun: Mapped[str] = _text()  # 区分（normalize_gas 済み。休日・祝日・出勤土曜）
+    cells: Mapped[dict] = _cell_kinds()  # 見出し付きの 1 行
 
 
 class Stamp(Base):
-    """M_STAMP（元: 読み先の「StampMap」。見出し: メール・stampFileId・備考）。"""
+    """M_STAMP（A メール・B stampFileId・C 備考＝名前。位置で読む）。"""
 
     __tablename__ = "stamps"
 
-    sheet_row: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    email: Mapped[str] = _text()  # A メール
-    stamp_file_id: Mapped[str] = _text()  # B stampFileId
-    note: Mapped[str] = _text()  # C 備考
-    cells: Mapped[list] = _cells()
+    sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    col_a: Mapped[str] = _text()  # メール（生）
+    col_b: Mapped[str] = _text()  # stampFileId（生）
+    col_c: Mapped[str] = _text()  # 備考＝名前（生）
+    cells: Mapped[list] = _cells()  # 1 行の値を左から順に
 
 
 class DeptApprover(Base):
-    """M_DEPT_APPROVERS（元: 読み先の「DeptApprovers」。見出し: dept・approverEmails・ approverName・役職・通知メール）。"""
+    """M_DEPT_APPROVERS（A dept・B approverEmails・C  approverName・D 役職・E 通知メール。位置で読む）。"""
 
     __tablename__ = "dept_approvers"
 
-    sheet_row: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
-    dept: Mapped[str] = _text()  # A
-    emails: Mapped[str] = _text()  # B（生の文字。カンマ区切り）
-    name: Mapped[str] = _text()  # C
-    title: Mapped[str] = _text()  # D 役職
-    notify_emails: Mapped[str] = _text()  # E 通知メール
-    cells: Mapped[list] = _cells()
+    sort_order: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    col_a: Mapped[str] = _text()  # dept（生）
+    col_b: Mapped[str] = _text()  # approverEmails（生。カンマ区切り）
+    col_c: Mapped[str] = _text()  # approverName（生）
+    col_d: Mapped[str] = _text()  # 役職（生）
+    col_e: Mapped[str] = _text()  # 通知メール（生）
 
 
 # ===== 土台の表 =====

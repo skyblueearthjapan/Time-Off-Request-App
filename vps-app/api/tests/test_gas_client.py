@@ -46,7 +46,7 @@ def test_call_sends_body_with_bearer_and_drops_it_on_redirect(settings):
         return httpx.Response(200, json={"ok": True, "action": "internal.afterApprove2", "jobId": "j-1"})
 
     gas = client_with(handler, settings)
-    assert gas.auth_mode == "delegate_bearer"
+    assert gas.auth_mode == "bearer"
     result = gas.call("internal.afterApprove2", job_id="j-1", request_id="LV-20261126-001",
                       expect={"status": "承認済"}, args={"x": 1})
     assert result["ok"] is True
@@ -54,19 +54,19 @@ def test_call_sends_body_with_bearer_and_drops_it_on_redirect(settings):
     assert (m1, h1, a1) == ("POST", "script.google.com", f"Bearer {ACCESS}")
     assert (m2, h2, a2, body2) == ("GET", "script.googleusercontent.com", None, b"")
     assert json.loads(body1) == {"internal": True, "token": TOKEN, "action": "internal.afterApprove2",
-                                 "jobId": "j-1", "requestId": "LV-20261126-001", "expect": {"status": "承認済"},
+                                 "jobId": "j-1", "reqId": "LV-20261126-001", "expect": {"status": "承認済"},
                                  "args": {"x": 1}}
     assert gas.timeout == 330
 
 
-def test_auth_none_sends_no_authorization(settings):
+def test_auth_anonymous_sends_no_authorization(settings):
     seen = []
 
     def handler(request):
         seen.append(request.headers.get("authorization"))
         return httpx.Response(200, json={"ok": True})
 
-    gas = client_with(handler, make_settings(gas_internal_auth="none"))
+    gas = client_with(handler, make_settings(gas_internal_auth="anonymous"))
     gas.call("internal.ping", job_id="p-1")
     assert seen == [None]
 
@@ -198,14 +198,14 @@ def test_arguments_are_checked():
 
 def test_actions_are_the_agreed_five():
     assert gc.ACTIONS == {"internal.ping", "internal.afterApprove1", "internal.afterApprove2",
-                          "internal.afterUnapprove", "internal.ledgerUpsert"}
+                          "internal.afterUnapprove", "internal.sendWarnMail"}
 
 
 def test_config_errors(settings):
     with pytest.raises(GasClientConfigError):
         GasClient(URL, "", settings=settings)
     with pytest.raises(GasClientConfigError):
-        GasClient(URL, TOKEN, auth_mode="delegate_bearer")  # トークンを得る関数が無い
+        GasClient(URL, TOKEN, auth_mode="bearer")  # トークンを得る関数が無い
     with pytest.raises(GasClientConfigError):
         GasClient(URL, TOKEN, auth_mode="basic")
 
@@ -226,3 +226,14 @@ def test_url_allow_list(settings):
                            prod_gas_internal_deployment_id="AKfycbTESTprodInternal0123456789abcdef")
     with pytest.raises(GasClientConfigError):
         assert_gas_url_allowed("https://script.google.com/macros/s/AKfycbOTHER/exec", pinned)
+
+
+def test_token_and_access_token_are_not_logged(settings, caplog):
+    """本文の token・委任のアクセストークンをログに出さない（仕様書 12-2 F）。"""
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    client_with(lambda r: httpx.Response(200, json={"ok": True}), settings).call(
+        "internal.afterApprove1", job_id="j-9", request_id="LV-20261126-009")
+    assert caplog.records
+    assert TOKEN not in caplog.text and ACCESS not in caplog.text

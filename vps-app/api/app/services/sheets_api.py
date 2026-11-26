@@ -3,7 +3,8 @@
 - 書く関数はすべて、直前に safety.assert_writable(spreadsheet_id, tab, purpose) を通す
   （staging は STAGING_SPREADSHEET_ID だけ、production は PROD_SPREADSHEET_ID だけ。タブと目的の許可リスト）。
   spreadsheets.batchUpdate の要求は updateCells と appendDimension（ROWS）だけで、すべて tab のシート
-  （safety.assert_write_requests）。values.append は T_LEAVE_REQUEST の REQ_ID だけ（RAW・OVERWRITE。行を挿入しない）。
+  （safety.assert_write_requests）。values.append は使わない（仕様書 6-2・9-1。新しい行の位置は row_sync が
+  「どれかの列に値がある最後の行の次」を自分で決めて updateCells で書く）。
   行・列・タブの挿入・削除・並べ替え・作り直しは出さない。
 - 読む関数は照合しない（マスタ元・本番 DB を読むのは許す）。
 - 429・5xx は指数的に待って 4 回まで送り直す。
@@ -14,9 +15,7 @@
     unformatted, formatted = api.read_both(sid, ["'T_LEAVE_REQUEST'!A1:AZ"])
     api.batch_update(sid, [{"updateCells": {...}}], tab="T_LEAVE_REQUEST", purpose="row_sync")
     api.append_rows(sid, "T_LEAVE_REQUEST", 10)                        # 末尾に行を足す（appendDimension）
-    first_row = api.append_values(sid, "T_LEAVE_REQUEST", [[req_id]])  # 表の次の行を取る（RAW・OVERWRITE）
-    api.values_batch_update(sid, [{"range": "'V_LEAVE_SUMMARY'!A1:L37", "values": [...]}],
-                            tab="V_LEAVE_SUMMARY", purpose="summary_sync")
+    api.values_update(sid, "'V_LEAVE_SUMMARY'!A1:L37", rows, tab="V_LEAVE_SUMMARY", purpose="summary_sheet")
     api.values_batch_update(sid, [{"range": "'M_CALENDAR'!A1:D130", "values": [...]}],
                             tab="M_CALENDAR", purpose="master_sync", input_option="USER_ENTERED")
     api.values_batch_clear(sid, ["'M_CALENDAR'!A131:D"], tab="M_CALENDAR", purpose="master_sync")
@@ -163,30 +162,16 @@ class SheetsApi:
         return self._call("POST", f"{API_BASE}/{spreadsheet_id}/values:batchUpdate",
                           body={"valueInputOption": input_option, "data": list(data)})
 
-    def append_values(self, spreadsheet_id: str, tab: str, values: Sequence[Sequence[Any]], *,
-                      purpose: str = "row_sync") -> int:
-        """values.append（RAW・insertDataOption=OVERWRITE。範囲は '<tab>'!A:A）。書いた最初の行（1 始まり）を返す。
-
-        Google が「表の最後の行の次」を決めて書くので、ほかの書き手の追記と同時でも同じ行を取り合わない。
-        OVERWRITE は行を挿入しない（シートの末尾なら行が足される＝appendDimension と同じ）。
-        文字は RAW なので式にならない。T_LEAVE_REQUEST の新しい行の REQ_ID だけに使う（safety が照合する）。
-        """
-        rows = [list(r) for r in values]
-        if not rows:
-            raise ValueError("書く行がありません")
-        for row in rows:
-            for v in row:
-                if not isinstance(v, str):
-                    raise safety.UnsafeWriteError("values.append は文字（REQ_ID）だけを書きます")
-        self._guard(spreadsheet_id, tab, purpose, "values.append")
-        rng = f"{quote_sheet(tab)}!A:A"
-        safety.assert_ranges_in_tab([rng], tab)
-        data = self._call("POST", f"{API_BASE}/{spreadsheet_id}/values/{quote_a1(rng)}:append",
-                          params={"valueInputOption": "RAW", "insertDataOption": "OVERWRITE",
-                                  "includeValuesInResponse": "false"},
-                          body={"range": rng, "majorDimension": "ROWS", "values": rows})
-        updated = str(((data or {}).get("updates") or {}).get("updatedRange") or "")
-        return first_row_of_range(updated)
+    def values_update(self, spreadsheet_id: str, range_a1: str, values: Sequence[Sequence[Any]], *, tab: str,
+                      purpose: str, input_option: str = "USER_ENTERED") -> dict:
+        """values.update（1 つの範囲。V_LEAVE_SUMMARY の A1:L<n+1> など。範囲は tab の中だけ）。"""
+        if input_option not in INPUT_OPTIONS:
+            raise ValueError(f"input_option は {INPUT_OPTIONS} のどれか: {input_option}")
+        self._guard(spreadsheet_id, tab, purpose, "values.update")
+        safety.assert_ranges_in_tab([range_a1], tab)
+        return self._call("PUT", f"{API_BASE}/{spreadsheet_id}/values/{quote_a1(range_a1)}",
+                          params={"valueInputOption": input_option},
+                          body={"range": range_a1, "majorDimension": "ROWS", "values": [list(r) for r in values]})
 
     def values_batch_clear(self, spreadsheet_id: str, ranges: Sequence[str], *, tab: str, purpose: str) -> dict:
         """values.batchClear（マスタ・集計のタブの余りの行の値だけ。行は消さない）。"""
@@ -231,16 +216,6 @@ def sheet_id_by_title(meta: dict, title: str) -> int | None:
 def spreadsheet_timezone(meta: dict) -> str:
     """properties.timeZone（DB_SHEET_TIMEZONE と照合する）。"""
     return str((meta.get("properties") or {}).get("timeZone") or "")
-
-
-def first_row_of_range(a1_range: str) -> int:
-    """'T_LEAVE_REQUEST'!A2336:A2337 → 2336（values.append の返事の updatedRange）。読めなければ SheetsError。"""
-    import re
-
-    m = re.search(r"!\$?[A-Z]+\$?(\d+)", a1_range or "")
-    if not m:
-        raise SheetsError(f"values.append の返事の範囲が読めません: {a1_range!r}")
-    return int(m.group(1))
 
 
 def quote_a1(a1_range: str) -> str:

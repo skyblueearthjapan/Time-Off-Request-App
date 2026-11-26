@@ -100,7 +100,7 @@ def test_env_example_has_no_secrets():
     for key in ("MAIL_REDIRECT_TO", "MAIL_ALLOWED_DOMAINS", "EXPORT_HOURLY_UNTIL", "SEBASTIAN_API_TOKEN",
                 "SEBASTIAN_PDF_WAIT_SECONDS", "PORTAL_URL"):
         assert key not in env
-    assert env["GAS_INTERNAL_AUTH"] == "delegate_bearer"
+    assert env["GAS_INTERNAL_AUTH"] == "bearer"
     assert env["PUBLIC_ORIGIN"] == "https://leave.lineworks-local.net"
     assert env["SESSION_MAX_AGE_DAYS"] == "90" and env["SESSION_IDLE_HOURS"] == "2160"
 
@@ -197,7 +197,7 @@ def test_nginx_no_sebastian_body_size_auth_limits_and_callback_not_logged():
     conf = read(WEB / "nginx.conf")
     locations = dict(re.findall(r"^\s*location ([^{]+?)\s*\{([^}]*)\}", conf, flags=re.M))
     assert "sebastian" not in conf.lower()
-    assert re.findall(r"client_max_body_size (\S+);", conf) == ["2m"]  # 手書きサインの PNG（base64）
+    assert re.findall(r"client_max_body_size (\S+);", conf) == ["4m"]  # 手書きサインの PNG（base64）。仕様書 3-7
     assert "limit_req zone=kyuka_auth" in locations["/auth/"]
     assert "access_log off;" in locations["= /auth/callback"]
     assert "proxy_set_header X-Forwarded-For $kyuka_client_ip;" in locations["= /auth/callback"]
