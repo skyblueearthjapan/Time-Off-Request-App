@@ -88,3 +88,37 @@ def test_collate_returns_sign_and_orders_like_locale_compare():
     # 日付の文字（yyyy/MM/dd・MM/dd HH:mm）は桁がそろっているので文字の順と同じ
     dates = ["2026/12/01", "2026/01/15", "2025/12/31", "12/01 09:00", "01/02 10:30"]
     assert sorted(dates, key=functools.cmp_to_key(collate_default)) == sorted(dates)
+
+
+def test_require_icu_stops_production_only(monkeypatch):
+    from app import jsutil
+
+    monkeypatch.setattr(jsutil, "_icu_module", lambda: None)
+    assert jsutil.icu_version() is None
+    jsutil.require_icu("staging")  # ステージング・手元は代わりの並びで動く
+    with pytest.raises(RuntimeError, match="PyICU"):
+        jsutil.require_icu("production")
+
+
+def test_create_app_refuses_production_without_icu(monkeypatch):
+    from app import jsutil, main
+
+    monkeypatch.setattr(jsutil, "_icu_module", lambda: None)
+    monkeypatch.setattr(main.safety, "verify_startup", lambda s: None)
+    monkeypatch.setattr(main, "get_settings", lambda: type("S", (), {"app_env": "production"})())
+    with pytest.raises(RuntimeError, match="PyICU"):
+        main.create_app(load_handlers=False)
+
+
+@pytest.mark.skipif(__import__("app.jsutil", fromlist=["icu_version"]).icu_version() is None,
+                    reason="PyICU が入っている環境（本番・ステージングのイメージ）だけで確かめる")
+def test_icu_ja_orders_kanji_names_like_jis_reading_order():
+    """ICU の ja は漢字を JIS X 0208 の順（第 1 水準はおおむね音読みの順）に並べる（符号の順とは違う）。"""
+    import functools
+
+    from app.jsutil import collate_ja
+
+    names = ["渡辺", "佐藤", "阿部", "伊藤"]
+    assert sorted(names, key=functools.cmp_to_key(collate_ja)) == ["阿部", "伊藤", "佐藤", "渡辺"]
+    assert sorted(names) == ["伊藤", "佐藤", "渡辺", "阿部"]  # 符号の順（代わりの並び）とは違う
+    assert collate_ja("か", "が") == -1

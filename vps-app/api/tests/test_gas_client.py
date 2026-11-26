@@ -214,16 +214,13 @@ def test_url_allow_list(settings):
     for deployment in PROD_GAS_DEPLOYMENT_IDS_FIXED:
         with pytest.raises(GasClientConfigError):
             assert_gas_url_allowed(f"https://script.google.com/macros/s/{deployment}/exec", settings)
-    prod = make_settings(app_env="production", staging_spreadsheet_id="", staging_pdf_folder_id="",
-                         staging_ledger_spreadsheet_id="",
-                         gas_internal_url="https://script.google.com/macros/s/AKfycbTESTprod/exec")
-    with pytest.raises(GasClientConfigError):
-        assert_gas_url_allowed("https://example.com/", prod)
-    assert assert_gas_url_allowed(prod.gas_internal_url, prod) == "AKfycbTESTprod"
     pinned = make_settings(app_env="production", staging_spreadsheet_id="", staging_pdf_folder_id="",
                            staging_ledger_spreadsheet_id="",
                            gas_internal_url="https://script.google.com/macros/s/AKfycbTESTprodInternal0123456789abcdef/exec",
                            prod_gas_internal_deployment_id="AKfycbTESTprodInternal0123456789abcdef")
+    with pytest.raises(GasClientConfigError):
+        assert_gas_url_allowed("https://example.com/", pinned)
+    assert assert_gas_url_allowed(pinned.gas_internal_url, pinned) == "AKfycbTESTprodInternal0123456789abcdef"
     with pytest.raises(GasClientConfigError):
         assert_gas_url_allowed("https://script.google.com/macros/s/AKfycbOTHER/exec", pinned)
 

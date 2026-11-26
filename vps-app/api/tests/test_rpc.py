@@ -519,3 +519,6 @@ def test_healthz_detail_only_for_admin(client, db, login_as):
     body = client.get("/healthz?detail=1").json()
     assert body["detail"]["rowSync"] == {"pending": 0, "blocked": 0, "oldestSeconds": 0, "delayed": False}
     assert body["detail"]["gasPing"] is None
+    from app import jsutil
+
+    assert "icu" in body["detail"] and body["detail"]["icu"] == jsutil.icu_version()

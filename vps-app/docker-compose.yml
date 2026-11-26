@@ -26,7 +26,6 @@ x-api-env: &api-env
   PROD_LEDGER_SPREADSHEET_ID: ${PROD_LEDGER_SPREADSHEET_ID}
   STAGING_LEDGER_SPREADSHEET_ID: ${STAGING_LEDGER_SPREADSHEET_ID:-}
   GAS_INTERNAL_URL: ${GAS_INTERNAL_URL}
-  GAS_INTERNAL_TOKEN: ${GAS_INTERNAL_TOKEN}
   GAS_CALL_TIMEOUT_SECONDS: ${GAS_CALL_TIMEOUT_SECONDS:-330}
   GAS_INTERNAL_AUTH: ${GAS_INTERNAL_AUTH:-bearer}
   PROD_GAS_INTERNAL_DEPLOYMENT_ID: ${PROD_GAS_INTERNAL_DEPLOYMENT_ID:-}
@@ -81,7 +80,11 @@ services:
     container_name: kyuka-worker
     restart: unless-stopped
     command: ["python", "-m", "app.worker"]
-    environment: *api-env
+    environment:
+      <<: *api-env
+      # GAS の内部用の入口の合言葉は、GAS を呼ぶ worker だけに渡す（api は GAS を呼ばない。仕事を積むだけ）。
+      # GAS を呼ぶ道具（tools/spike_gas_auth.py など）も worker のコンテナで動かす。
+      GAS_INTERNAL_TOKEN: ${GAS_INTERNAL_TOKEN}
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
@@ -92,7 +95,7 @@ services:
     networks: [kyuka-net]
 
   web:
-    image: nginx:1.27-alpine
+    image: nginx:1.28-alpine
     container_name: kyuka-web
     restart: unless-stopped
     volumes:

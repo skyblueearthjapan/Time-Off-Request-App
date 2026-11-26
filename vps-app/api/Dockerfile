@@ -2,9 +2,23 @@
 # playwright・chromium・日本語フォントは入れない。bookworm に固定する（罠 1）。
 #
 # ステージ:
-# - base: 実行に要るもの
+# - build: 依存を wheel にする段。PyICU はソースからビルドするので、ここだけに libicu-dev・pkg-config・g++ を入れる。
+# - base: 実行に要るもの（ICU は実行用のライブラリ libicu72 だけ。build の段で作った wheel を入れる）
 # - test: base に pytest と tests を足したもの。VPS の結合試験で使う（`docker build --target test`。罠 51）
 # - runtime（最後のステージ＝既定）: 本番のイメージ。tests と pytest は入れない。USER app。
+FROM python:3.12-slim-bookworm AS build
+
+ENV PIP_NO_CACHE_DIR=1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential pkg-config libicu-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY requirements.txt requirements-dev.txt ./
+RUN pip wheel --wheel-dir /wheels -r requirements-dev.txt
+
+
 FROM python:3.12-slim-bookworm AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,12 +27,15 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TZ=Asia/Tokyo
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends tzdata curl \
+ && apt-get install -y --no-install-recommends tzdata curl libicu72 \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY requirements.txt ./
-RUN pip install -r requirements.txt
+# wheel は build の段から借りるだけ（イメージに残さない。BuildKit の --mount。docker compose v2 は既定で BuildKit）
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-index --find-links=/wheels -r requirements.txt \
+ && python -c "import icu; print('ICU', icu.ICU_VERSION)"
 
 COPY alembic.ini ./
 COPY alembic ./alembic
@@ -38,7 +55,8 @@ CMD ["sh", "-c", "alembic upgrade head && exec uvicorn --factory app.main:create
 # ---- 試験用（本番には使わない） ----
 FROM base AS test
 COPY requirements-dev.txt ./
-RUN pip install -r requirements-dev.txt
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-index --find-links=/wheels -r requirements-dev.txt
 COPY tests ./tests
 COPY pytest.ini ./
 RUN chown -R app:app /app

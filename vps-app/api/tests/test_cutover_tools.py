@@ -16,6 +16,7 @@ import cutover_backup  # noqa: E402,I001 - d_sheet_fixtures が tools を読み�
 import restore_tabs_from_copy as restore  # noqa: E402
 
 COPY_ID = "copy-of-staging-db"
+PROD_DEPLOY = "AKfycbTESTprodInternal0123456789abcdefXYZ"
 
 
 # ===== 控え =====
@@ -49,7 +50,8 @@ def test_backup_copies_only_allowed_sources(settings):
 
 def test_backup_production_uses_fixed_ids():
     prod = make_settings(app_env="production", staging_spreadsheet_id="", staging_pdf_folder_id="",
-                         staging_ledger_spreadsheet_id="")
+                         staging_ledger_spreadsheet_id="", gas_internal_url=f"https://script.google.com/macros/s/{PROD_DEPLOY}/exec",
+                         prod_gas_internal_deployment_id=PROD_DEPLOY)
     assert [i for _, i in cutover_backup.allowed_sources(prod)] == [_config.PROD_SPREADSHEET_ID_FIXED,
                                                                    _config.PROD_LEDGER_SPREADSHEET_ID_FIXED]
 

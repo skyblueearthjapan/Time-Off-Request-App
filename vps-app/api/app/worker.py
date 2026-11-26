@@ -324,14 +324,22 @@ class Worker:
             t.join(timeout=30)
 
 
+def require_gas_token(settings: Any) -> None:
+    """worker は GAS を呼ぶので GAS_INTERNAL_TOKEN が要る（compose は worker だけに渡す。api は空で動く）。"""
+    if not getattr(settings, "gas_internal_token", ""):
+        raise RuntimeError("GAS_INTERNAL_TOKEN がありません（worker は GAS を呼ぶので起動しません）")
+
+
 def main(argv: list[str] | None = None) -> None:  # pragma: no cover - VPS で動かす
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-    from app import jobs, safety
+    from app import jobs, jsutil, safety
     from app.config import get_settings
     from app.db import get_sessionmaker
 
     settings = get_settings()  # fail-closed
     safety.verify_startup(settings)
+    require_gas_token(settings)
+    jsutil.require_icu(settings.app_env)  # 本番は ICU の照合が無ければ止まる（集計の並び）
     sf = get_sessionmaker()
     register_builtin_schedules()
     loaded = load_registrations()

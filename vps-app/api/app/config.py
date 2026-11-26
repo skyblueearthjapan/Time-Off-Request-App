@@ -126,7 +126,9 @@ class Settings(BaseSettings):
 
     # GAS の内部用の入口
     gas_internal_url: str = Field(min_length=1)
-    gas_internal_token: str = Field(min_length=32)
+    # 合言葉は GAS を呼ぶ worker だけに渡す（compose）。api は空で起動する。worker は空なら起動しない
+    # （worker.require_gas_token）。値があるときは 32 字以上。
+    gas_internal_token: str = ""
     gas_call_timeout_seconds: float = Field(default=330, gt=0, le=600)
     # bearer（第 1 案・既定）: 委任のアクセストークンを Authorization: Bearer で付ける（Web アプリが access: DOMAIN）。
     # anonymous（第 2 案）: 本文の token だけ（内部用のデプロイだけ ANYONE_ANONYMOUS の版）。仕様書 7-1
@@ -174,6 +176,13 @@ class Settings(BaseSettings):
             raise ValueError("PROD_GAS_INTERNAL_DEPLOYMENT_ID が GAS の deploymentId の形（AKfyc…）ではありません")
         if v in KNOWN_STAGING_IDS:
             raise ValueError("PROD_GAS_INTERNAL_DEPLOYMENT_ID がステージングの GAS のデプロイです")
+        return v
+
+    @field_validator("gas_internal_token")
+    @classmethod
+    def _gas_token(cls, v: str) -> str:
+        if v and len(v) < 32:
+            raise ValueError("GAS_INTERNAL_TOKEN は 32 字以上にしてください")
         return v
 
     @field_validator("gas_internal_url")
@@ -244,7 +253,10 @@ class Settings(BaseSettings):
         else:
             if deployment in KNOWN_STAGING_IDS:
                 raise ValueError("本番の GAS_INTERNAL_URL がステージングの GAS のデプロイを指しています")
-            if self.prod_gas_internal_deployment_id and deployment != self.prod_gas_internal_deployment_id:
+            # 本番は呼んでよい GAS のデプロイを必ず 1 つに決める（空のままでは GAS_INTERNAL_URL を照合できない）
+            if not self.prod_gas_internal_deployment_id:
+                raise ValueError("本番は PROD_GAS_INTERNAL_DEPLOYMENT_ID（本番の内部用の GAS のデプロイ）が要ります")
+            if deployment != self.prod_gas_internal_deployment_id:
                 raise ValueError("本番の GAS_INTERNAL_URL が PROD_GAS_INTERNAL_DEPLOYMENT_ID のデプロイと違います")
             for name, value in staging_values.items():
                 if value and value in PRODUCTION_IDS:
