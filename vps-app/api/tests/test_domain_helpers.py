@@ -73,13 +73,13 @@ def add_workers(db, rows: list[tuple[str, str, str]], extra: dict | None = None)
     for i, (code, name, dept) in enumerate(rows, start=1):
         cells = {"作業員コード": code, "氏名": name, "部署": dept, "担当業務": "", "拠点": "", "スタッフ種類": ""}
         cells.update((extra or {}).get(code, {}))
-        db.add(Worker(sort_order=i, cells=cells))
+        db.add(Worker(sort_order=i, cells=[[h, v] for h, v in cells.items()]))
     db.commit()
 
 
 def add_calendar(db, rows: list[tuple[date | None, str]]) -> None:
     for i, (d, kubun) in enumerate(rows, start=1):
-        db.add(CalendarDay(sort_order=i, date=d, kubun=kubun, cells={}))
+        db.add(CalendarDay(sort_order=i, date=d, kubun=kubun, cells=[]))
     db.commit()
 
 

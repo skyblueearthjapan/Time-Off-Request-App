@@ -6,8 +6,8 @@ DB スプレッドシートの 6 タブを読み、DB の表を全置換する�
 |---|---|---|
 | M_SYSTEM_SETTING | settings | 2 行目から A=キー（String(v||'').trim()）・B=値（生の文字）。同じキーは下の行が勝つ（値が空でも勝つ。config.gs:107-119） |
 | M_LOOKUP | lookup | 見出し（カテゴリ・値・SORT）の文字で列を引く |
-| 作業員マスタ | workers | 見出し付きの 1 行（cells＝{見出し: 値}） |
-| M_CALENDAR | calendar | 見出し（日付・区分・曜日・備考）の文字で列を引く。日付はセルの瞬間の JST の日付 |
+| 作業員マスタ | workers | 見出しと値の組の配列（cells＝[[見出し, 値], …]。シートの列の順のまま。同じ見出しも残す） |
+| M_CALENDAR | calendar | 見出し（日付・区分・曜日・備考）の文字で列を引く（同じ見出しは前の列）。日付はセルの瞬間の JST の日付。cells は workers と同じ組の配列 |
 | M_STAMP | stamps | 位置（A メール・B stampFileId・C 備考） |
 | M_DEPT_APPROVERS | dept_approvers | 位置（A〜E） |
 
@@ -136,9 +136,25 @@ def parse_lookup(u: list, f: list | None = None) -> list[dict]:
     return out
 
 
+def _width(u: list) -> int:
+    """getDataRange の列の数（いちばん長い行。Sheets API は行の末尾の空のセルを返さない）。"""
+    return max((len(r) for r in u), default=0)
+
+
+def header_pairs(header: list, urow: list, frow: list, width: int, tz: Any) -> list[list]:
+    """1 行を [[見出し, 値], …]（左の列から順。見出しの無い列・同じ見出しの列も残す）にする。
+
+    PostgreSQL の JSONB はオブジェクトのキーの順を保たず、同じキーを 1 つにまとめる。シートの列の並び
+    （GAS の getValues の並び）を保つため、dict ではなく配列で持つ。
+    """
+    return [[js_trim(js_string(_cell(header, i))), gas_value(_cell(urow, i), _cell(frow, i), tz)]
+            for i in range(width)]
+
+
 def parse_workers(u: list, f: list | None, tz: Any) -> list[dict]:
     f = f or []
     header = [js_trim(js_string(h)) for h in (u[0] if u else [])]
+    width = _width(u)
 
     def at(urow, frow, *labels):
         return gas_text(_cell(urow, _header_col(header, *labels)), _cell(frow, _header_col(header, *labels)))
@@ -147,8 +163,7 @@ def parse_workers(u: list, f: list | None, tz: Any) -> list[dict]:
     for r, urow, frow in _rows(u, f):
         if not _has_any(urow):
             continue
-        cells = {h: gas_value(_cell(urow, i), _cell(frow, i), tz) for i, h in enumerate(header) if h}
-        out.append({"sort_order": len(out) + 1, "sheet_row": r, "cells": cells,
+        out.append({"sort_order": len(out) + 1, "sheet_row": r, "cells": header_pairs(header, urow, frow, width, tz),
                     "worker_code": at(urow, frow, "作業員コード", "作業員ID")})
     return out
 
@@ -168,6 +183,7 @@ def parse_calendar(u: list, f: list | None, tz: Any) -> list[dict]:
     f = f or []
     header = list(u[0]) if u else []
     cd, ck = _header_col(header, "日付"), _header_col(header, "区分")
+    width = _width(u)
 
     out = []
     for r, urow, frow in _rows(u, f):
@@ -176,8 +192,7 @@ def parse_calendar(u: list, f: list | None, tz: Any) -> list[dict]:
         day = calendar_date(_cell(urow, cd), _cell(frow, cd), tz) if cd >= 0 else None
         out.append({"sort_order": len(out) + 1, "sheet_row": r, "date": day,
                     "kubun": normalize_gas(gas_text(_cell(urow, ck), _cell(frow, ck))) if ck >= 0 else "",
-                    "cells": {js_trim(js_string(h)): gas_value(_cell(urow, i), _cell(frow, i), tz)
-                              for i, h in enumerate(header) if js_trim(js_string(h))}})
+                    "cells": header_pairs(header, urow, frow, width, tz)})
     return out
 
 
@@ -226,7 +241,7 @@ def build_rows(tab: str, u: list, f: list, tz: Any) -> tuple[list[dict], int]:
     _model, parse, key = _parsers(tz)[tab]
     rows = parse(u, f)
     if tab == TAB_WORKER:  # compactRows_ と同じく 1 列目が空でない行
-        return rows, sum(1 for r in rows if not _blank_js(next(iter(r["cells"].values()), "")))
+        return rows, sum(1 for r in rows if not _blank_js(r["cells"][0][1] if r["cells"] else ""))
     if tab == TAB_CALENDAR:
         return rows, sum(1 for r in rows if r["date"] is not None)
     return rows, valid_rows(rows, key)

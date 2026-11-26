@@ -64,7 +64,7 @@ def test_syncs_four_tabs_like_gas(db, settings):
     assert cal.fmt == DATE_FMT and codec.serial_to_jst_date(cal.value, "Etc/GMT") == date(2026, 12, 5)
     assert book.tabs["M_STAMP"].get(1, 1).value == "stamp-9"
     # DB の表も同じデータで置き換わる
-    assert db.get(Worker, 1).cells["作業員コード"] == 42
+    assert db.get(Worker, 1).cells[0] == ["作業員コード", 42]
     assert db.get(CalendarDay, 1).date == date(2026, 12, 5)
     assert db.get(Stamp, 1).col_b == "stamp-9" and db.get(DeptApprover, 1).col_a == "組立"
     # 元には書かない
