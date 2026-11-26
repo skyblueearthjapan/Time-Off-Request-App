@@ -431,9 +431,9 @@ function buildLeavePdfSheet_(sheet, data, approverEmail, approver2Email) {
   var approvedStr = '';
   if (data.approvedAt) {
     var ad = new Date(data.approvedAt);
-    approvedStr = (ad.getFullYear() - 2018) + '/' + (ad.getMonth() + 1) + '/' + ad.getDate();
+    approvedStr = pdfApprovalDateText_(ad);
   }
-  sheet.getRange('D28:F28').merge().setValue(approvedStr)
+  sheet.getRange('D28:F28').merge().setNumberFormat('@').setValue(approvedStr)
     .setFontSize(9).setHorizontalAlignment('center');
   sheet.getRange('G28:I28').merge().setValue('')
     .setFontSize(9).setHorizontalAlignment('center');
@@ -519,15 +519,15 @@ function buildLeavePdfSheet_(sheet, data, approverEmail, approver2Email) {
         }
       }
       // 所属長承認日をG28に表示（1次承認日）
-      sheet.getRange('G28:I28').merge().setValue(approvedStr)
+      sheet.getRange('G28:I28').merge().setNumberFormat('@').setValue(approvedStr)
         .setFontSize(9).setHorizontalAlignment('center');
       // 部長承認日（2次承認日）をD28に表示（呼び出し時点の日付）
       var ad2 = new Date();
       if (data.approvedAt2) {
         ad2 = new Date(data.approvedAt2);
       }
-      var approved2Str = (ad2.getFullYear() - 2018) + '/' + (ad2.getMonth() + 1) + '/' + ad2.getDate();
-      sheet.getRange('D28:F28').setValue(approved2Str);
+      var approved2Str = pdfApprovalDateText_(ad2);
+      sheet.getRange('D28:F28').setNumberFormat('@').setValue(approved2Str);
     } catch (e2) {
       console.error('2次承認者電子印エラー: ' + e2.message);
     }
@@ -756,4 +756,13 @@ function exportSheetToPdfBlob_(spreadsheetId, sheetId, filename) {
   }
 
   return res.getBlob().setName(filename);
+}
+
+/**
+ * 承認日の表記（西暦 yyyy/MM/dd。2026-11-26 オーナーの決定）。
+ * 以前は令和の年だけの「8/11/26」を書いていたが、シートが日付と読み替えて「2008/11/26」と出ていた。
+ * セルを文字の形式（'@'）にしてから書くので、読み替えは起きない。
+ */
+function pdfApprovalDateText_(d) {
+  return Utilities.formatDate(d, 'Asia/Tokyo', 'yyyy/MM/dd');
 }
