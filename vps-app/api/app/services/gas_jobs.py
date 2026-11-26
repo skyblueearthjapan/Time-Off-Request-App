@@ -23,7 +23,10 @@ W の業務関数は、業務の書き込み（と sheet_queue.mark_dirty）と�
 行の反映の対象外なので mark_dirty も synced_values も触らない（VPS がシートの G 列を上書きしない）。
 再試行: retryable:true と通信の失敗・時間切れは jobs の間隔で、同じ jobId（guard_json.gasJobId）で送り直す
 （GAS が jobId ごとに済んだ段を覚えていて二重にしない）。入口に入れない失敗（GasAuthError）と retryable:false は
-送り直さず failed（管理者の欄。jobs.retry_failed でやり直せる）。
+送り直さず failed（管理者の欄。jobs.retry_failed でやり直せる）。failed の仕事が同じ申請の後の仕事を止めるのは、
+後の仕事がその段に頼るときだけ（failed_blocks）。
+一部の失敗: ok:true の返事の sign・mail・trash・ledger の status:'error' は、仕事を done にしたまま result_json の
+partialErrors に残し、運用の欄（ops_status の gasJobs.partial）に出す。
 """
 from __future__ import annotations
 
@@ -355,6 +358,44 @@ def _write_summary_sheet(db: Session) -> dict:
     return dict(result) if isinstance(result, Mapping) else {}
 
 
+PARTIAL_STEPS = ("sign", "mail", "trash", "ledger")
+
+
+def partial_errors(resp: Mapping[str, Any]) -> list[dict]:
+    """ok:true の返事の中で失敗した段（sign・mail・trash・ledger の status:'error'）。
+
+    GAS は台帳・メール・サイン・PDF の捨てだけの失敗を、全体を ok:true のまま段の status:'error' で返す
+    （今の GAS が握りつぶして続けるのと同じ）。仕事は done にし、運用の欄（「一部が失敗した仕事」）に出す。
+    """
+    out = []
+    for step in PARTIAL_STEPS:
+        part = resp.get(step)
+        if isinstance(part, Mapping) and part.get("status") == "error":
+            out.append({"step": step, "error": str(part.get("error") or "")[:300],
+                        "message": str(part.get("message") or "")[:500]})
+    return out
+
+
+def failed_blocks(db: Session, failed: models.Job, later: models.Job) -> bool:
+    """同じ申請の先の仕事が failed のとき、後の仕事を止めるか（jobs.register_kind の failed_blocks）。
+
+    止めるのは、後の仕事が先の仕事の段に頼るときだけ（ほかは進める。やり直さない失敗で後の仕事を永久に止めない）:
+    - 先が afterUnapprove: 止める。台帳の行を消す・サインの列を空にする段の後に、承認し直しの段が書く順番が要る。
+      afterUnapprove には guard が無いので、後の仕事を先に進めてから再実行すると新しいサイン・台帳の行を消してしまう。
+    - 先が afterApprove1・後が afterApprove2: サインの段が済んでいない（sign_png が残っている）なら止める（PDF に
+      手書きサインが入らない）。サインの段が済んだ（record_gas_result が sign_png を消した）・電子印なら進める。
+    - ほか（先が afterApprove1・afterApprove2）は進める。先の仕事を後で再実行しても、guard（状態・承認日時）が
+      今の値と違えば skipped になり、後の仕事の結果を上書きしない。行の反映は後の仕事の requires が待つ。
+    failed の仕事は運用の欄（gasJobs.failed）に出て、ops_retryJob でやり直せる。
+    """
+    if failed.kind == KIND_AFTER_UNAPPROVE:
+        return True
+    if failed.kind == KIND_AFTER_APPROVE1 and later.kind == KIND_AFTER_APPROVE2:
+        req = db.get(models.LeaveRequest, later.request_id)
+        return req is not None and req.sign_png is not None
+    return False
+
+
 def handle_job(ctx: JobContext) -> dict:
     """GAS の仕事 1 件（jobs.register_kind のハンドラー）。"""
     db = ctx.db
@@ -393,7 +434,13 @@ def handle_job(ctx: JobContext) -> dict:
             record_for_db["sign"] = {"status": "cleared", "signImageUrl": ""}
         record_gas_result(db, req.req_id, record_for_db)
     if resp.get("ok") is True:
-        return _scrub(resp)
+        result = _scrub(resp)
+        partial = partial_errors(resp)
+        if partial:  # 仕事は done（後の仕事は止めない）。result_json に残し、運用の欄に出す
+            result["partialErrors"] = partial
+            log.warning("GAS の仕事の一部の段が失敗しました: job=%s kind=%s request=%s %s", ctx.job_id, ctx.kind,
+                        ctx.request_id, partial)
+        return result
     _store_job_result(db, ctx.job_id, resp)
     ctx.commit()  # 済んだ段の結果と返事を残してから失敗にする
     if resp.get("retryable") is True:
@@ -515,7 +562,7 @@ def register_worker() -> None:
     from app import worker
 
     for kind in KINDS:
-        jobs.register_kind(kind, handle_job, lane="gas", on_exhausted=on_exhausted)
+        jobs.register_kind(kind, handle_job, lane="gas", on_exhausted=on_exhausted, failed_blocks=failed_blocks)
     worker.register_schedule("gas_ping", task=run_gas_ping, every_minutes=5, run_at_startup=True)
 
 
