@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import base64
-from datetime import date
+import struct
+import zlib
+from datetime import date, timedelta
 
 import pytest
 from test_domain_helpers import ADMIN, SOMU, USER, add_request, ctx, install_fakes, jst, standard_masters
@@ -11,7 +13,17 @@ from app.domain import approval, quirks
 from app.models import LeaveRequest
 from app.rpc import RpcError
 
-PNG = b"\x89PNG\r\n\x1a\nfake"
+def make_png(width: int, height: int, *, ihdr: bytes = b"IHDR") -> bytes:
+    """canvas.toDataURL('image/png') と同じ形の PNG（白一色。中身は zlib の IDAT）。"""
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+
+    raw = b"".join(b"\x00" + b"\xff\xff\xff\xff" * width for _ in range(height))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(ihdr, struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b""))
+
+
+PNG = make_png(4, 2)
 DATA_URL = "data:image/png;base64," + base64.b64encode(PNG).decode()
 
 
@@ -71,6 +83,76 @@ def test_approve1_sign_too_large(db, rec, monkeypatch):
     monkeypatch.setattr(quirks, "SIGN_MAX_CHARS", 10)
     add_request(db, "LV-1", status="申請中")
     assert err(approval.api_approveLeaveRequest, ctx(db), "LV-1", DATA_URL, "a@x") == "サイン画像が大きすぎます。"
+
+
+@pytest.mark.parametrize("email", [None, "", "somu@lineworks-local.info", "a@x", "上長@社内"])
+def test_approve1_accepts_empty_or_email_shaped_approver(db, rec, email):
+    """電子印を選ぶと画面は M_STAMP のメールを渡す（今の動きは変わらない）。"""
+    add_request(db, "LV-1", status="申請中")
+    assert approval.api_approveLeaveRequest(ctx(db), "LV-1", "", email)["ok"]
+    assert db.get(LeaveRequest, "LV-1").approved_by1_email == (email or "")
+
+
+@pytest.mark.parametrize("email", ["not-an-email", "a@b@c", "a b@x", "@x", "a@", 5, ["a@x"], {"a": "b"},
+                                   "a@" + "x" * 255, "a@x\n"])
+def test_approve1_rejects_bad_approver_email(db, rec, email):
+    add_request(db, "LV-1", status="申請中")
+    assert err(approval.api_approveLeaveRequest, ctx(db), "LV-1", "", email) == "承認者のメールアドレスが正しくありません。"
+    assert db.get(LeaveRequest, "LV-1").status == "申請中" and rec.calls == []
+
+
+def test_approve1_accepts_tablet_sized_png(db, rec):
+    """devicePixelRatio 3 のタブレットの canvas（例 1500×600）。白地の PNG は数十 KB に収まる。"""
+    png = make_png(1500, 600)
+    assert len(png) < 100_000
+    add_request(db, "LV-1", status="申請中")
+    approval.api_approveLeaveRequest(ctx(db), "LV-1", "data:image/png;base64," + base64.b64encode(png).decode(), "")
+    assert db.get(LeaveRequest, "LV-1").sign_png == png
+
+
+@pytest.mark.parametrize("data", [
+    b"GIF89a" + b"\x00" * 40,  # PNG の頭でない
+    b"\x89PNG\r\n\x1a\n" + b"\x00" * 8,  # 短すぎる
+    make_png(4, 2, ihdr=b"IDAT"),  # 最初の塊が IHDR でない
+    make_png(4001, 1), make_png(1, 4001), make_png(0, 5),  # 縦横は 1〜4000
+])
+def test_approve1_rejects_bad_png(db, rec, data):
+    add_request(db, "LV-1", status="申請中")
+    url = "data:image/png;base64," + base64.b64encode(data).decode()
+    assert err(approval.api_approveLeaveRequest, ctx(db), "LV-1", url, "") == "サイン画像の形式が正しくありません。"
+    assert db.get(LeaveRequest, "LV-1").status == "申請中" and rec.calls == []
+
+
+def test_approve1_rejects_png_over_decoded_limit(db, rec, monkeypatch):
+    monkeypatch.setattr(quirks, "SIGN_MAX_BYTES", len(PNG) - 1)
+    add_request(db, "LV-1", status="申請中")
+    assert err(approval.api_approveLeaveRequest, ctx(db), "LV-1", DATA_URL, "") == "サイン画像の形式が正しくありません。"
+    assert quirks.SIGN_MAX_BYTES < 1_500_000
+
+
+def test_new_timestamps_are_truncated_to_seconds(db, rec, settings):
+    """申請・承認の日時は秒で切り捨てる（GAS の照合が秒まで比べる）。シートへ書くシリアル値も秒の精度。"""
+    from app.services import sheet_codec as codec
+
+    now = jst(2026, 11, 26, 10, 0, 5) + timedelta(microseconds=987_654)
+    add_request(db, "LV-1", status="申請中")
+    approval.api_approveLeaveRequest(ctx(db, now=now), "LV-1", "", "")
+    row = db.get(LeaveRequest, "LV-1")
+    assert row.approved_at.microsecond == 0 and row.approved_at == jst(2026, 11, 26, 10, 0, 5)
+    serial = codec.datetime_to_serial(row.approved_at, "Etc/GMT")
+    assert round(serial * 86400, 6) == int(round(serial * 86400))
+    approval.api_approveLeaveRequest2(ctx(db, ADMIN, now=now + timedelta(seconds=1)), "LV-1", ADMIN)
+    row = db.get(LeaveRequest, "LV-1")
+    assert row.approved_at2.microsecond == 0
+    assert row.approved_at == jst(2026, 11, 26, 10, 0, 5)  # 1 次承認の日時はそのまま
+
+
+def test_existing_row_timestamps_with_milliseconds_are_kept(db, rec):
+    """移行した古い行（ミリ秒を持つ値）は、2 次承認でも 1 次承認の日時を変えない。"""
+    old = jst(2026, 11, 20, 9, 30, 1) + timedelta(milliseconds=250)
+    add_request(db, "LV-1", status="承認済", approved_at=old)
+    approval.api_approveLeaveRequest2(ctx(db, ADMIN), "LV-1", ADMIN)
+    assert db.get(LeaveRequest, "LV-1").approved_at == old
 
 
 def test_decode_sign_without_prefix():

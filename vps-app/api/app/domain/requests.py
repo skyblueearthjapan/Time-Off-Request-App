@@ -165,7 +165,7 @@ def api_submitLeaveRequest(ctx: RpcContext, data=None):
         store.set_text(row, col, value)
     store.set_date(row, "leave_date", leave_date)
     store.set_date(row, "substitute_date", sub_value)
-    store.set_date(row, "applied_at", store.ms(ctx.now))
+    store.set_date(row, "applied_at", store.seconds(ctx.now))
     store.set_text(row, "created_by_email", ctx.user.email or "")
     db.add(row)
     store.mark(db, req_id)

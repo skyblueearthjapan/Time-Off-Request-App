@@ -24,6 +24,8 @@ PENDING_SORT_WITH_YEAR = True
 
 # 手書きサインの data URL の上限（文字数。nginx は 4m、rpc の本文は 3 MB。受け入れる差）
 SIGN_MAX_CHARS = 3_000_000
+# 手書きサインの PNG の上限（base64 を解いた後のバイト数）。今の画面の PNG は devicePixelRatio 3 のタブレットでも数十 KB
+SIGN_MAX_BYTES = 1_500_000
 
 # シートのセルの上限（GAS も書き込みで失敗する。受け入れる差）
 MAX_CELL_CHARS = 50_000
