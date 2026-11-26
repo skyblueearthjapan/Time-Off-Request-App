@@ -15,8 +15,8 @@
   GMT のシートでは前日 15:00＝小数 .625）。読むときはセルの瞬間の JST の日付にする（古い行の GMT 0:00＝JST 9:00 の
   整数のセルも同じ日になる）。変えていない列は書かないので、古い行の元のシリアル値はそのまま残る。
 
-DB の列の名前は実装仕様 5-1（fiscal_year・leave_kubun ほか）。土台の models.py が先に作られた名前
-（fy_start_year・day_type ほか）でも動くよう、model_attr() が実物の列の名前に読み替える（土台が仕様に合えば素通り）。
+DB の列の名前は実装仕様 5-1（fiscal_year・leave_kubun ほか）。model_attr()・to_columns() は、持たない列（*_text など）
+を捨てる小道具。移行のときのシートの生の値（休暇日の .625／整数など）は sheet_sync_state.synced_values の __raw__ に残す。
 """
 from __future__ import annotations
 
@@ -132,18 +132,8 @@ def rule(header: str) -> ColumnRule:
 
 # ===== 土台の models.py との読み替え（土台が仕様 5-1 の名前になれば、1 つ目の候補がそのまま使われる） =====
 
-LEAVE_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {
-    "fiscal_year": ("fiscal_year", "fy_start_year"),
-    "leave_kubun": ("leave_kubun", "day_type"),
-    "half_day_type": ("half_day_type", "half_type"),
-    "leave_type": ("leave_type", "leave_kind"),
-    "substitute_date": ("substitute_date", "substitute_for_work_date"),
-    "substitute_date_text": ("substitute_date_text", "substitute_for_work_date_text"),
-    "special_reason": ("special_reason", "special_reason_text"),
-    "paid_detail": ("paid_detail", "paidleave_detail"),
-    "additional_detail": ("additional_detail", "detail_free"),
-    "updated_at_text": ("updated_at_text",),  # 土台の updated_at は timestamptz なので使わない
-}
+# 仕様の名前 → 実物の列の候補（土台は仕様 5-1 の名前になった＝master 5c4431e。読み替えは要らないので空）
+LEAVE_ATTR_CANDIDATES: dict[str, tuple[str, ...]] = {}
 
 
 def _leave_columns() -> dict[str, Any]:

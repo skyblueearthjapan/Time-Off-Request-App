@@ -1,9 +1,9 @@
-"""試験用の偽の Google Sheets API（外へはつながない。担当 D の試験が使う。残業の tests/fake_sheets.py の写し）。
+"""試験用の偽の Google Sheets API（外へはつながない。担当 D の試験が使う。姉妹アプリの試験の偽物の写し）。
 
 本物の SheetsApi（安全装置の照合を含む）に session_factory として渡す。
     fake = FakeSheets()
     book = fake.add_book("sid", tz="Asia/Tokyo")
-    book.add_tab("Requests", [[...], ...], formats={(行, 列): {...}})
+    book.add_tab("T_LEAVE_REQUEST", [[...], ...], formats={(行, 列): {...}})
     api = fake.api(settings)
 
 - セルは (値, 表示形式)。値は UNFORMATTED（日時はシリアル値）。FORMATTED_VALUE は表示形式から作る
@@ -14,7 +14,7 @@
 - updateCells が行数を超えれば 400（本物と同じ。appendDimension で先に足す）。
 - values/{range}:append（insertDataOption=OVERWRITE は表の次の行に書く、INSERT_ROWS はそこに行を挿入して書く。
   表は範囲の列で最初に値のある行から、どれかの列に値がある行が続く所まで＝本物の「表」の探し方を簡単にしたもの）。
-  Sebastian の追記（USER_ENTERED・INSERT_ROWS）を試験で再現するのに使う（決定 #26）。
+  外の書き手の追記（USER_ENTERED・INSERT_ROWS）を試験で再現するのに使う。
 - before_request に関数を入れると、各呼び出しの前に (method, url, params, body) で呼ぶ（同時の書き込みの再現）。
 """
 from __future__ import annotations
@@ -72,15 +72,15 @@ def parse_a1(a1: str) -> tuple[str, int, int | None, int, int | None]:
         title, rest = m.group(1).replace("''", "'"), m.group(2)
     if not rest:
         return title, 0, None, 0, None
-    parts = rest.split(":")
+    pieces = rest.split(":")
 
     def cell(text):
         mm = re.match(r"^([A-Z]*)(\d*)$", text)
         assert mm, a1
         return (col_index(mm.group(1)) if mm.group(1) else None), (int(mm.group(2)) - 1 if mm.group(2) else None)
 
-    c1, r1 = cell(parts[0])
-    c2, r2 = cell(parts[1]) if len(parts) > 1 else (c1, r1)
+    c1, r1 = cell(pieces[0])
+    c2, r2 = cell(pieces[1]) if len(pieces) > 1 else (c1, r1)
     return title, (r1 or 0), r2, (c1 or 0), c2
 
 
@@ -244,7 +244,7 @@ class FakeSheets:
     # ----- 呼び出しの記録 -----
 
     def writes(self) -> list[tuple[str, str, Any]]:
-        return [(m, u, b) for (m, u, p, b) in self.calls if m == "POST"]
+        return [(m, u, b) for (m, u, p, b) in self.calls if m in ("POST", "PUT")]
 
     def batch_requests(self) -> list[dict]:
         out = []
@@ -274,6 +274,10 @@ class FakeSheets:
             sid, _, rest = path.partition("/")
             if method == "GET" and rest == "values:batchGet":
                 return self._batch_get(sid, params)
+            if method == "PUT" and rest.startswith("values/"):
+                p = dict(params or {})
+                return self._values_update(sid, {"valueInputOption": p.get("valueInputOption"),
+                                                 "data": [{"range": json["range"], "values": json["values"]}]})
             if method == "POST" and rest == "values:batchUpdate":
                 return self._values_update(sid, json)
             if method == "POST" and rest == "values:batchClear":
@@ -377,7 +381,7 @@ class FakeSheets:
         if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
             return serial(s), dict(DATE_FMT)
         m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2}):(\d{2})", s)
-        if m:  # 'M/D/YYYY H:MM:SS'（en_US の書き方。Sebastian の submittedAt）
+        if m:  # 'M/D/YYYY H:MM:SS'（en_US の書き方）
             mo, d, y, h, mi, se = (int(x) for x in m.groups())
             return serial(f"{y:04d}-{mo:02d}-{d:02d} {h:02d}:{mi:02d}:{se:02d}"), dict(DATETIME_FMT)
         if re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", s):

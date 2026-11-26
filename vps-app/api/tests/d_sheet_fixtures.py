@@ -128,7 +128,7 @@ def add_db_book(fake: FakeSheets, sid: str, *, leave_rows: list[list] | None = N
         book.add_tab(title, values, formats=fmts)
     book.add_tab("V_LEAVE_SUMMARY", [SUMMARY_HEADER] + [list(r) for r in SUMMARY_ROWS],
                  formats={(r, 10): dict(DATE_FMT) for r in range(1, len(SUMMARY_ROWS) + 1)})
-    book.add_tab("BatchLogs", [["実行日時"]])
+    book.add_tab("PDF_TEMPLATE", [["実行日時"]])
 
 
 def make_fake(*, leave_rows: list[list] | None = None) -> FakeSheets:
@@ -159,7 +159,9 @@ def fake_summary_rows(db, now):
     for row in db.scalars(select(LeaveRequest).order_by(LeaveRequest.sheet_row)):
         if normalize_gas(row.status) != "承認済":
             continue
-        fy = codec.get_attr(row, "fiscal_year")
+        fy = row.fiscal_year
+        if (row.cell_kinds or {}).get("fiscal_year") == "number":
+            fy = int(float(fy))  # 元のセルの型（数なら数）
         key = f"{fy}_{normalize_gas(row.worker_id)}"
         s = out.get(key)
         if s is None:

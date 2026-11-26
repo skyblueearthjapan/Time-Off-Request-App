@@ -19,7 +19,7 @@ DB スプレッドシートの 6 タブを読み、DB の表を全置換する�
 セルの値は GAS の getValues が返す形に合わせる: 文字はそのまま、数は数、日付のセル（数で表示が日付）は JST の
 ISO の文字（'yyyy-MM-ddTHH:mm:ss+09:00'）。文字にするときは JS の String(値)（日付のセルは表示の文字）。
 
-表の列の名前は実装仕様 5-2。土台の models.py の名前が違う所は _fit() が読み替える（sort_order→sheet_row など）。
+表の列の名前は実装仕様 5-2（マスタは sort_order＝データ行の順で 1 から。見出しの行は持たない）。
 """
 from __future__ import annotations
 
@@ -148,10 +148,8 @@ def parse_workers(u: list, f: list | None, tz: Any) -> list[dict]:
         if not _has_any(urow):
             continue
         cells = {h: gas_value(_cell(urow, i), _cell(frow, i), tz) for i, h in enumerate(header) if h}
-        out.append({"sort_order": r, "cells": cells,
-                    "worker_code": at(urow, frow, "作業員コード", "作業員ID"), "worker_name": at(urow, frow, "氏名"),
-                    "dept": at(urow, frow, "部署", "部署ID"), "duty": at(urow, frow, "担当業務"),
-                    "site": at(urow, frow, "拠点"), "staff_type": at(urow, frow, "スタッフ種類")})
+        out.append({"sort_order": len(out) + 1, "sheet_row": r, "cells": cells,
+                    "worker_code": at(urow, frow, "作業員コード", "作業員ID")})
     return out
 
 
@@ -170,18 +168,16 @@ def parse_calendar(u: list, f: list | None, tz: Any) -> list[dict]:
     f = f or []
     header = list(u[0]) if u else []
     cd, ck = _header_col(header, "日付"), _header_col(header, "区分")
-    cw, cn = _header_col(header, "曜日"), _header_col(header, "備考")
+
     out = []
     for r, urow, frow in _rows(u, f):
         if not _has_any(urow):
             continue
         day = calendar_date(_cell(urow, cd), _cell(frow, cd), tz) if cd >= 0 else None
-        out.append({"sort_order": r, "date": day,
-                    "day_text": "" if day else gas_text(_cell(urow, cd), _cell(frow, cd)),
+        out.append({"sort_order": len(out) + 1, "sheet_row": r, "date": day,
                     "kubun": normalize_gas(gas_text(_cell(urow, ck), _cell(frow, ck))) if ck >= 0 else "",
-                    "weekday": gas_text(_cell(urow, cw), _cell(frow, cw)) if cw >= 0 else "",
-                    "note": gas_text(_cell(urow, cn), _cell(frow, cn)) if cn >= 0 else "",
-                    "cells": [gas_value(v, _cell(frow, i), tz) for i, v in enumerate(urow)]})
+                    "cells": {js_trim(js_string(h)): gas_value(_cell(urow, i), _cell(frow, i), tz)
+                              for i, h in enumerate(header) if js_trim(js_string(h))}})
     return out
 
 
@@ -193,7 +189,7 @@ def parse_positional(u: list, f: list | None, width: int, tz: Any) -> list[dict]
     for r, urow, frow in _rows(u, f):
         if not _has_any(urow):
             continue
-        rec = {"sort_order": r, "cells": [gas_value(v, _cell(frow, i), tz) for i, v in enumerate(urow)]}
+        rec = {"sort_order": len(out) + 1, "sheet_row": r, "cells": [gas_value(v, _cell(frow, i), tz) for i, v in enumerate(urow)]}
         for i, n in enumerate(names):
             rec[n] = gas_text(_cell(urow, i), _cell(frow, i))
         out.append(rec)
@@ -205,32 +201,10 @@ def valid_rows(rows: list[dict], key: str) -> int:
     return sum(1 for r in rows if js_trim(js_string(r.get(key, ""))) != "")
 
 
-# 仕様 5-2 の列 → 土台の列の候補
-FIT_ALIASES: dict[str, tuple[str, ...]] = {
-    "sort_order": ("sheet_row",),
-    "sort_text": ("sort",),
-    "date": ("day",),
-    "kubun": ("kind",),
-    "col_a": ("email", "dept"),
-    "col_b": ("stamp_file_id", "emails"),
-    "col_c": ("note", "name"),
-    "col_d": ("title",),
-    "col_e": ("notify_emails",),
-}
-
-
 def _fit(model: Any, record: dict) -> dict:
+    """表に無いキー（読み方の手がかりの sheet_row・worker_code など）を捨てる。"""
     cols = {c.name for c in model.__table__.columns}
-    out: dict = {}
-    for k, v in record.items():
-        if k in cols:
-            out.setdefault(k, v)
-            continue
-        for alt in FIT_ALIASES.get(k, ()):
-            if alt in cols and alt not in record:
-                out[alt] = v
-                break
-    return out
+    return {k: v for k, v in record.items() if k in cols}
 
 
 # 表 → (モデル, 読み方, 有効な行のキー)

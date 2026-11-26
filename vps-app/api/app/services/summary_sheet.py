@@ -24,7 +24,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app import jobs, safety, timeutil
+from app import jobs, timeutil
 from app.constants import TAB_LEAVE_SUMMARY
 from app.jsutil import js_string, js_trim
 from app.models import Job, LeaveRequest, SyncRun
@@ -49,9 +49,7 @@ FORMULA_LEADS = ("=", "+", "-", "@")
 GRID_FIELDS = "sheets(data(rowData(values(userEnteredFormat(numberFormat)))))"
 
 
-def purpose() -> str:
-    """safety の書き込みの目的の名前（仕様の summary_sheet。土台は summary_sync）。"""
-    return "summary_sheet" if "summary_sheet" in safety.PURPOSE_TABS else "summary_sync"
+PURPOSE = "summary_sheet"  # safety の書き込みの目的
 
 
 def summary_rows(db: Session, now: datetime) -> list[dict]:
@@ -233,9 +231,8 @@ def write(db: Session, *, api: SheetsApi | None = None, app_settings: Any = None
     grid = build_grid(rows, frac, tz)
     n = len(grid)
     q = quote_sheet(TAB)
-    p = purpose()
-    api.values_batch_update(sid, [{"range": f"{q}!A1:L{n}", "values": grid}], tab=TAB, purpose=p,
-                            input_option="USER_ENTERED")
+    p = PURPOSE
+    api.values_update(sid, f"{q}!A1:L{n}", grid, tab=TAB, purpose=p, input_option="USER_ENTERED")
     if frac is not None and n > 1:
         fmt = _column_format(api, sid)
         sheet_id = sheet_id_by_title(meta, TAB)

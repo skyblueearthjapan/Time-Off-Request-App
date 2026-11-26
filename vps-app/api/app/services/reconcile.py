@@ -281,8 +281,6 @@ def register_worker() -> None:
     from app import worker
 
     worker.register_schedule("sheet_reconcile", task=_scheduled, at=(2, 10))
-    # 土台の worker.REGISTRATION_MODULES には summary_sheet が無い（summary_sync の名前で並んでいる）ので、ここで登録する
-    summary_sheet.register_worker()
 
 
 __all__ = ["compare_rows", "db_rows_for", "run", "register_worker"]
