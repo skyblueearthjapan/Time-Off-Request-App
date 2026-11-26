@@ -1,0 +1,145 @@
+<!doctype html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>休暇届 管理</title>
+  <style>
+    :root{--bg1:#eaf6ff;--bg2:#f7fffb;--accent:#1f9d55;--accent2:#0ea5e9;--text:#0b2545;--muted:#5c6b7a;--card:#ffffffcc;--line:#d7e7f5;--danger:#ff5a5f;--warn:#ffb020;}
+    *{box-sizing:border-box;}
+    body{
+      margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;
+      color:var(--text);
+      background:radial-gradient(1100px 600px at 18% 0%,var(--bg1),transparent),
+        radial-gradient(1100px 600px at 92% 20%,var(--bg2),transparent),
+        linear-gradient(180deg,#ffffff,#f3fbff);
+    }
+    header{
+      padding:18px 22px;display:flex;align-items:flex-end;justify-content:space-between;
+      border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+      position:sticky;top:0;background:rgba(255,255,255,.55);z-index:10;
+    }
+    .title{font-weight:900;letter-spacing:.06em;font-size:18px;}
+    .sub{opacity:.8;font-size:12px;color:var(--muted);}
+    .wrap{padding:18px 22px;max-width:1100px;margin:0 auto;}
+    .card{
+      background:var(--card);border:1px solid var(--line);border-radius:18px;
+      padding:14px 18px;box-shadow:0 10px 30px rgba(10,40,80,.06);margin-bottom:14px;
+    }
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+    button{
+      padding:10px 16px;border-radius:12px;border:0;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:800;cursor:pointer;font-size:14px;
+      box-shadow:0 10px 22px rgba(31,157,85,.20);
+    }
+    .btn-blue{background:linear-gradient(135deg,var(--accent2),#38bdf8);box-shadow:0 10px 22px rgba(14,165,233,.20);}
+    .btn-sm{padding:6px 10px;font-size:12px;border-radius:8px;}
+    .ghost{background:#fff;color:var(--text);border:1px solid var(--line);box-shadow:none;}
+    .pill{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#fff;display:inline-block;}
+    .danger{border-color:#ffb3b3;background:#fff0f0;color:#7a0b0b;}
+    .warn{border-color:#ffd29e;background:#fff6eb;color:#7a4a0b;}
+    .ok{border-color:#bfe9d0;background:#f0fff6;color:#0b5a2b;}
+    .info{border-color:#b3d4ff;background:#f0f7ff;color:#0b2a5a;}
+    table{width:100%;border-collapse:collapse;font-size:13px;}
+    th,td{border-bottom:1px solid var(--line);padding:10px 8px;text-align:left;}
+    th{font-size:12px;color:var(--muted);}
+    tr.warn-row{background:#fff8ee;}
+    tr.danger-row{background:#fff0f0;}
+    a{color:var(--accent2);text-decoration:none;}
+    a:hover{text-decoration:underline;}
+    .nav-link{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--text);}
+    .nav-link:hover{background:var(--bg1);text-decoration:none;}
+    .portal-link{
+      font-size:13px;padding:6px 14px;border-radius:8px;
+      background:linear-gradient(135deg,var(--accent),#1bd67f);
+      color:#fff;font-weight:700;text-decoration:none;
+    }
+    .portal-link:hover{opacity:.9;text-decoration:none;}
+    .loading{text-align:center;padding:30px;color:var(--muted);}
+    select{padding:8px 14px;border-radius:999px;border:1px solid var(--line);font-size:14px;font-weight:700;min-width:160px;}
+    .tab-bar{display:flex;gap:4px;margin-bottom:14px;}
+    .tab-btn{
+      padding:10px 20px;border-radius:12px 12px 0 0;border:1px solid var(--line);
+      border-bottom:none;background:#fff;cursor:pointer;font-weight:700;font-size:14px;
+      color:var(--muted);
+    }
+    .tab-btn.active{background:var(--card);color:var(--text);border-bottom:1px solid transparent;}
+    .tab-content{display:none;}
+    .tab-content.active{display:block;}
+    .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+    .kpi-card{
+      background:var(--card);border:1px solid var(--line);border-radius:14px;
+      padding:14px;text-align:center;
+    }
+    .kpi-label{font-size:12px;color:var(--muted);margin-bottom:4px;}
+    .kpi-value{font-size:24px;font-weight:900;}
+    .kpi-value.danger{color:var(--danger);}
+    .kpi-value.warn{color:var(--warn);}
+    @media(max-width:640px){
+      header{flex-direction:column;align-items:flex-start;gap:8px;}
+      .wrap{padding:12px 10px;}
+      .kpi-grid{grid-template-columns:1fr 1fr;}
+      table{font-size:12px;}
+      th,td{padding:8px 4px;}
+      select{min-width:auto;width:100%;}
+    }
+  </style>
+<link rel="stylesheet" href="/static/css/mobile.css">
+</head>
+<body data-page="admin">
+  <header>
+    <div>
+      <div class="title">休暇届 管理ダッシュボード</div>
+      <div class="sub">有給取得状況の管理・警告確認</div>
+    </div>
+    <div class="row">
+      <a href="{{ APP_URL }}?page=top" target="_top" class="nav-link">申請TOPへ</a>
+      <a href="{{ PORTAL_URL }}" target="_top" class="portal-link" id="portalLink" style="display:none;">社内ポータルへ移動</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <!-- フィルタ -->
+    <div class="card" style="padding:12px 16px;">
+      <div class="row">
+        <div>
+          <label style="font-weight:700;font-size:13px;">年度：</label>
+          <select id="fySelect"></select>
+        </div>
+        <div id="deptFilterWrap" style="display:none;">
+          <label style="font-weight:700;font-size:13px;">部署：</label>
+          <select id="deptFilter"><option value="">全部署</option></select>
+        </div>
+        <button class="btn-sm btn-blue" data-on-click="loadData">更新</button>
+        <button class="btn-sm ghost" id="csvBtn" data-on-click="exportCsv" style="display:none;">CSVエクスポート</button>
+      </div>
+    </div>
+
+    <!-- タブ -->
+    <div class="tab-bar">
+      <div class="tab-btn active" data-tab="boss" data-on-click="switchTab" data-args='["boss"]'>上長ビュー</div>
+      <div class="tab-btn" data-tab="somu" data-on-click="switchTab" data-args='["somu"]' id="somuTab" style="display:none;">総務ビュー</div>
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-grid" id="kpiGrid">
+      <div class="kpi-card"><div class="kpi-label">対象者数</div><div class="kpi-value" id="kpiTotal">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">有給未達者</div><div class="kpi-value danger" id="kpiWarn">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">危険レベル</div><div class="kpi-value danger" id="kpiDanger">-</div></div>
+      <div class="kpi-card"><div class="kpi-label">平均有給回数</div><div class="kpi-value" id="kpiAvg">-</div></div>
+    </div>
+
+    <!-- テーブル -->
+    <div class="card">
+      <div style="font-weight:900;letter-spacing:.05em;margin-bottom:8px;">有給取得状況一覧</div>
+      <div id="tableWrap"><div class="loading">読み込み中...</div></div>
+    </div>
+  </div>
+
+<script type="application/json" id="gas-template-data">{{ data_json|safe }}</script>
+<script src="/static/js/gas-shim.js"></script>
+<script src="/static/js/admin.js"></script>
+</body>
+</html>
