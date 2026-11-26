@@ -127,3 +127,13 @@
 - 文字で書かれた日付の行は無い（inv-4 の「3/28〜4/11 の編集は文字」は、今の実物には残っていない）。
 - **V_LEAVE_SUMMARY**: 年度・作業員ID・回数は数（有給回数は 0.5 刻み）。**最終有給日は日付のシリアル値（数のセル）**。GAS はこれを Date で読み `String(Date)` にするので、画面には長い英語の日付で出ている見込み（K5。画面で確かめる）。警告レベルは文字か空。
 - M_SYSTEM_SETTING は 15 行（見出し＋14 キー）。重複するキーは無い。
+
+## 6. ステージングの資源（2026-11-26 作成。imaizumi@ 所有。見守りの後に片付ける）
+
+| もの | ID | 中身 |
+|---|---|---|
+| フォルダ「【ステージング】休暇届 PDF・台帳（消してよい）」 | `1T6ZZ8t-G7fq8BxMUoB7yw2I8i2VXqRCm` | 試験用の PDF・サイン画像の置き場（`STAGING_PDF_FOLDER_ID`）。下の 2 冊もこの中 |
+| 「【ステージング】休暇届けapp（消してよい）」 | `1SG4FV9raYuFu8jaWzCVpXvKqo1LPEO7aR44KifWrYqw` | 本番 DB の 2026-11-26 10:55 ごろの複製（`STAGING_SPREADSHEET_ID`）。時間帯 `Etc/GMT`・`en_US`。M_SYSTEM_SETTING の `PDF_FOLDER_ID`・`LEDGER_SSID`・`MAIL_TO`（オーナーの 1 件だけ）を書き換え、T_LEAVE_REQUEST の `SIGN_IMAGE_URL`・`PDF_URL` を空にした。`APP_URL` は写しの GAS をデプロイした後で書き換える |
+| 「【ステージング】休暇届台帳（消してよい）」 | `1FpeButODbprm7Bri2WQWlDgwzYDwiwLb8FvWu1XO2YM` | 台帳の複製（`STAGING_LEDGER_SPREADSHEET_ID`） |
+
+写しの GAS（複製に付いたスクリプト）の scriptId とデプロイは、G 担当のコードを入れるときに控える。
