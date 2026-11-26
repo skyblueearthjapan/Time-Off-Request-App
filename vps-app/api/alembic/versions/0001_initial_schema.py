@@ -1,6 +1,4 @@
-"""initial schema（土台の表・業務の表 leave_requests・共有タブとマスタの表）
-
-足りない列は後の担当が 0002 で足す。
+"""initial schema（土台の表・業務の表 leave_requests・設定とマスタの表。列名は仕様書 5 章）
 
 Revision ID: 0001
 Revises:
@@ -37,24 +35,20 @@ def upgrade() -> None:
         batch_op.create_index(batch_op.f('ix_audit_log_at'), ['at'], unique=False)
 
     op.create_table('calendar',
-    sa.Column('sheet_row', sa.Integer(), autoincrement=False, nullable=False),
-    sa.Column('day', sa.Date(), nullable=True),
-    sa.Column('day_text', sa.Text(), server_default='', nullable=False),
-    sa.Column('kind', sa.Text(), server_default='', nullable=False),
-    sa.Column('weekday', sa.Text(), server_default='', nullable=False),
-    sa.Column('note', sa.Text(), server_default='', nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
-    sa.PrimaryKeyConstraint('sheet_row')
+    sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
+    sa.Column('date', sa.Date(), nullable=True),
+    sa.Column('kubun', sa.Text(), server_default='', nullable=False),
+    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='{}', nullable=False),
+    sa.PrimaryKeyConstraint('sort_order')
     )
     op.create_table('dept_approvers',
-    sa.Column('sheet_row', sa.Integer(), autoincrement=False, nullable=False),
-    sa.Column('dept', sa.Text(), server_default='', nullable=False),
-    sa.Column('emails', sa.Text(), server_default='', nullable=False),
-    sa.Column('name', sa.Text(), server_default='', nullable=False),
-    sa.Column('title', sa.Text(), server_default='', nullable=False),
-    sa.Column('notify_emails', sa.Text(), server_default='', nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
-    sa.PrimaryKeyConstraint('sheet_row')
+    sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
+    sa.Column('col_a', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_b', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_c', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_d', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_e', sa.Text(), server_default='', nullable=False),
+    sa.PrimaryKeyConstraint('sort_order')
     )
     op.create_table('google_credentials',
     sa.Column('name', sa.String(length=32), nullable=False),
@@ -109,39 +103,38 @@ def upgrade() -> None:
 
     op.create_table('leave_requests',
     sa.Column('req_id', sa.String(length=64), nullable=False),
-    sa.Column('fy_start_year', sa.Integer(), nullable=True),
+    sa.Column('fiscal_year', sa.Text(), server_default='', nullable=False),
     sa.Column('status', sa.Text(), server_default='申請中', nullable=False),
     sa.Column('applied_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('applied_at_text', sa.Text(), server_default='', nullable=False),
     sa.Column('dept_id', sa.Text(), server_default='', nullable=False),
     sa.Column('dept_name', sa.Text(), server_default='', nullable=False),
     sa.Column('worker_id', sa.Text(), server_default='', nullable=False),
     sa.Column('worker_name', sa.Text(), server_default='', nullable=False),
     sa.Column('leave_date', sa.Date(), nullable=True),
     sa.Column('leave_date_text', sa.Text(), server_default='', nullable=False),
-    sa.Column('day_type', sa.Text(), server_default='', nullable=False),
-    sa.Column('half_type', sa.Text(), server_default='', nullable=False),
-    sa.Column('leave_kind', sa.Text(), server_default='', nullable=False),
-    sa.Column('substitute_for_work_date', sa.Date(), nullable=True),
-    sa.Column('substitute_for_work_date_text', sa.Text(), server_default='', nullable=False),
+    sa.Column('leave_kubun', sa.Text(), server_default='', nullable=False),
+    sa.Column('half_day_type', sa.Text(), server_default='', nullable=False),
+    sa.Column('leave_type', sa.Text(), server_default='', nullable=False),
+    sa.Column('substitute_date', sa.Date(), nullable=True),
+    sa.Column('substitute_date_text', sa.Text(), server_default='', nullable=False),
     sa.Column('special_reason_ref', sa.Text(), server_default='', nullable=False),
-    sa.Column('special_reason_text', sa.Text(), server_default='', nullable=False),
-    sa.Column('paidleave_detail', sa.Text(), server_default='', nullable=False),
-    sa.Column('detail_free', sa.Text(), server_default='', nullable=False),
+    sa.Column('special_reason', sa.Text(), server_default='', nullable=False),
+    sa.Column('paid_detail', sa.Text(), server_default='', nullable=False),
+    sa.Column('additional_detail', sa.Text(), server_default='', nullable=False),
     sa.Column('approved_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('approved_at_text', sa.Text(), server_default='', nullable=False),
     sa.Column('sign_image_url', sa.Text(), server_default='', nullable=False),
     sa.Column('pdf_url', sa.Text(), server_default='', nullable=False),
     sa.Column('created_by_email', sa.Text(), server_default='', nullable=False),
-    sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('updated_at_text', sa.Text(), server_default='', nullable=False),
     sa.Column('approved_by1_email', sa.Text(), server_default='', nullable=False),
     sa.Column('approved_by2', sa.Text(), server_default='', nullable=False),
     sa.Column('approved_by2_email', sa.Text(), server_default='', nullable=False),
     sa.Column('approved_at2', sa.DateTime(timezone=True), nullable=True),
+    sa.Column('approved_at2_text', sa.Text(), server_default='', nullable=False),
     sa.Column('pdf_file_id', sa.Text(), server_default='', nullable=False),
-    sa.Column('old_pdf_file_id_pending', sa.Text(), server_default='', nullable=False),
     sa.Column('sign_png', sa.LargeBinary(), nullable=True),
-    sa.Column('source_pdf_file_id', sa.Text(), server_default='', nullable=False),
-    sa.Column('source_pdf_url', sa.Text(), server_default='', nullable=False),
-    sa.Column('source_sign_image_url', sa.Text(), server_default='', nullable=False),
     sa.Column('row_version', sa.Integer(), server_default='1', nullable=False),
     sa.Column('sheet_row', sa.Integer(), nullable=True),
     sa.Column('cell_kinds', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='{}', nullable=False),
@@ -158,8 +151,7 @@ def upgrade() -> None:
     sa.Column('sheet_row', sa.Integer(), autoincrement=False, nullable=False),
     sa.Column('category', sa.Text(), server_default='', nullable=False),
     sa.Column('value', sa.Text(), server_default='', nullable=False),
-    sa.Column('sort', sa.Text(), server_default='', nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
+    sa.Column('sort_text', sa.Text(), server_default='', nullable=False),
     sa.PrimaryKeyConstraint('sheet_row')
     )
     op.create_table('sessions',
@@ -201,12 +193,12 @@ def upgrade() -> None:
         batch_op.create_index('ix_sheet_sync_state_seq', ['seq'], unique=False)
 
     op.create_table('stamps',
-    sa.Column('sheet_row', sa.Integer(), autoincrement=False, nullable=False),
-    sa.Column('email', sa.Text(), server_default='', nullable=False),
-    sa.Column('stamp_file_id', sa.Text(), server_default='', nullable=False),
-    sa.Column('note', sa.Text(), server_default='', nullable=False),
+    sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
+    sa.Column('col_a', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_b', sa.Text(), server_default='', nullable=False),
+    sa.Column('col_c', sa.Text(), server_default='', nullable=False),
     sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
-    sa.PrimaryKeyConstraint('sheet_row')
+    sa.PrimaryKeyConstraint('sort_order')
     )
     op.create_table('sync_runs',
     sa.Column('id', sa.BigInteger().with_variant(sa.Integer(), 'sqlite'), autoincrement=True, nullable=False),
@@ -221,15 +213,9 @@ def upgrade() -> None:
         batch_op.create_index('ix_sync_runs_kind_started', ['kind', 'started_at'], unique=False)
 
     op.create_table('workers',
-    sa.Column('sheet_row', sa.Integer(), autoincrement=False, nullable=False),
-    sa.Column('worker_code', sa.Text(), server_default='', nullable=False),
-    sa.Column('worker_name', sa.Text(), server_default='', nullable=False),
-    sa.Column('dept', sa.Text(), server_default='', nullable=False),
-    sa.Column('duty', sa.Text(), server_default='', nullable=False),
-    sa.Column('site', sa.Text(), server_default='', nullable=False),
-    sa.Column('staff_type', sa.Text(), server_default='', nullable=False),
-    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='[]', nullable=False),
-    sa.PrimaryKeyConstraint('sheet_row')
+    sa.Column('sort_order', sa.Integer(), autoincrement=False, nullable=False),
+    sa.Column('cells', sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), 'postgresql'), server_default='{}', nullable=False),
+    sa.PrimaryKeyConstraint('sort_order')
     )
     # ### end Alembic commands ###
 

@@ -128,7 +128,7 @@ def test_missing_tab_is_not_created(settings):
     api, _ = make_api(settings)
     with pytest.raises(SheetsError):  # V_LEAVE_SUMMARY はこの偽のシートに無い
         api.batch_update(STAGING, [{"updateCells": {"range": {"sheetId": 44}}}], tab="V_LEAVE_SUMMARY",
-                         purpose="summary_sync")
+                         purpose="summary_sheet")
 
 
 def test_retries_on_429_and_5xx(settings):

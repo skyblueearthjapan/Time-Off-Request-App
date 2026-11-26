@@ -33,12 +33,15 @@ PROD_GAS_SCRIPT_ID_FIXED = "15aGUL5ilIYawxnib_8-81vYvphg7DcekgDC-XRVRxr_vazRIiyI
 PROD_PDF_FOLDER_ID_FIXED = "1MQibR08wWsE_OGurO9RocEEDGgDOwo-w"
 # 休暇届台帳（総務確認用）（VPS は書かない。GAS が書く）
 PROD_LEDGER_SPREADSHEET_ID_FIXED = "1B7tnsT4lr80o3pFMBxB2zEhsx2UW2PCL48YTQc9i1eU"
-# 本番 GAS の Web アプリのデプロイ（@106・@104・@HEAD）。ステージングの GAS_INTERNAL_URL がこれを指していれば起動しない。
-# 本番の内部用のデプロイの deploymentId は、作った後に .env の PROD_GAS_INTERNAL_DEPLOYMENT_ID で渡す
-# （両方の環境の .env に書く。Settings.prod_gas_deployment_ids がこの定数と合わせて使う）。
-PROD_GAS_DEPLOYMENT_IDS_FIXED: tuple[str, ...] = (
+# 本番 GAS の画面のデプロイ（@106 本番・@104 ブックマーク）。GAS_INTERNAL_URL がこれを指していれば、どの環境も起動しない。
+PROD_GAS_SCREEN_DEPLOYMENT_IDS: tuple[str, ...] = (
     "AKfycbx7sB9x7iLigEqZX9LuErK95R2ZC0cMOyU9efr6pIbpnqAnnDC3o5_DGFbtwgSh64j2",
     "AKfycbwHI1uz6tcer59sRC4dYEACDaevSn9a_eJa3J0E8LZgjdWCGPJVaqr_Qa9L-HXVKI8k",
+)
+# 本番 GAS のデプロイ（画面の 2 つ＋@HEAD）。ステージングの GAS_INTERNAL_URL がこれを指していれば起動しない。
+# 本番の内部用のデプロイの deploymentId は、作った後に .env の PROD_GAS_INTERNAL_DEPLOYMENT_ID で渡す
+# （両方の環境の .env に書く。Settings.prod_gas_deployment_ids がこの定数と合わせて使う）。
+PROD_GAS_DEPLOYMENT_IDS_FIXED: tuple[str, ...] = PROD_GAS_SCREEN_DEPLOYMENT_IDS + (
     "AKfycbw_GAlPaXbETZTNpkK84k0YRwW5koclx1AHFpaqDL8",
 )
 
@@ -125,9 +128,9 @@ class Settings(BaseSettings):
     gas_internal_url: str = Field(min_length=1)
     gas_internal_token: str = Field(min_length=32)
     gas_call_timeout_seconds: float = Field(default=330, gt=0, le=600)
-    # delegate_bearer（既定）: 委任のアクセストークンを Authorization: Bearer で付ける（Web アプリが access: DOMAIN）。
-    # none: 本文の token だけ。
-    gas_internal_auth: Literal["delegate_bearer", "none"] = "delegate_bearer"
+    # bearer（第 1 案・既定）: 委任のアクセストークンを Authorization: Bearer で付ける（Web アプリが access: DOMAIN）。
+    # anonymous（第 2 案）: 本文の token だけ（内部用のデプロイだけ ANYONE_ANONYMOUS の版）。仕様書 7-1
+    gas_internal_auth: Literal["bearer", "anonymous"] = "bearer"
     # 本番の内部用の GAS のデプロイの deploymentId（作ったら両方の環境に書く。空なら未設定）。
     # production: GAS_INTERNAL_URL がこれと違えば起動しない。staging: GAS_INTERNAL_URL がこれなら起動しない。
     prod_gas_internal_deployment_id: str = ""
@@ -220,6 +223,8 @@ class Settings(BaseSettings):
             raise ValueError("DELEGATE_EMAIL は社内ドメインのアドレスにしてください")
 
         deployment = gas_deployment_id(self.gas_internal_url)
+        if deployment in PROD_GAS_SCREEN_DEPLOYMENT_IDS:
+            raise ValueError("GAS_INTERNAL_URL が画面のデプロイ（@106・@104）を指しています（内部用のデプロイにしてください）")
         staging_values = {
             "STAGING_SPREADSHEET_ID": self.staging_spreadsheet_id,
             "STAGING_PDF_FOLDER_ID": self.staging_pdf_folder_id,

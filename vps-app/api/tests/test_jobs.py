@@ -148,10 +148,10 @@ def test_failed_previous_job_blocks_same_request(session_factory, db, clock):
 
     jobs.register_kind("internal.afterApprove1", fail, lane="gas")
     jobs.register_kind("internal.regenerate", lambda ctx: ran.append(ctx.request_id), lane="gas")
-    jobs.register_kind("internal.ledgerUpsert", lambda ctx: ran.append(ctx.request_id), lane="gas")
+    jobs.register_kind("internal.sendWarnMail", lambda ctx: ran.append(ctx.request_id), lane="gas")
     first = enqueue(session_factory, "internal.afterApprove1", request_id="R1")
     second = enqueue(session_factory, "internal.regenerate", request_id="R1")
-    other = enqueue(session_factory, "internal.ledgerUpsert", request_id="R2")
+    other = enqueue(session_factory, "internal.sendWarnMail", request_id="R2")
     r = runner(session_factory, clock)
     assert r.run_once()["failed"] == 1
     assert job(db, first).state == "failed" and "ledger_header_mismatch" in job(db, first).last_error

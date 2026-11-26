@@ -5,11 +5,15 @@
 - js_string(v) = String(v)（1.0 → "1"、true → "true"、null/undefined → ""）。
 - normalize_gas(s) = src/config.gs の normalize_（前後の空白を取り、全角英数を半角に）。
 - js_sort_key(s) = JS の文字の比べ（UTF-16 の符号単位の順）と同じ並びになるキー。
+- collate_default(a, b)・collate_ja(a, b) = localeCompare（言語なし・'ja'）。
+- sheet_readback(text) = シートへ書いた文字を読み直した値と型（数に見える文字は数）。
 """
 from __future__ import annotations
 
 import math
 import re
+import unicodedata
+from decimal import Decimal
 from typing import Any
 
 # JS の String.prototype.trim が取る空白（WhiteSpace と LineTerminator）
@@ -37,7 +41,8 @@ def _js_number_string(value: float) -> str:
     if math.isinf(value):
         return "Infinity" if value > 0 else "-Infinity"
     if value == int(value) and abs(value) < 1e21:
-        return str(int(value))
+        # JS は最短の桁で書いてから 0 を足す（2**64 → "18446744073709552000"）。repr も最短の桁
+        return format(Decimal(repr(value)), "f") if "e" in repr(value) else str(int(value))
     text = repr(value)
     if "e" in text:
         mantissa, exp = text.split("e")
@@ -112,3 +117,95 @@ def js_sort_key(value: Any) -> tuple[int, ...]:
     """JS の既定の並び（Array.prototype.sort・`<`）と同じ順になるキー（UTF-16 の符号単位の並び）。"""
     data = js_string(value).encode("utf-16-be", "surrogatepass")
     return tuple(int.from_bytes(data[i:i + 2], "big") for i in range(0, len(data), 2))
+
+
+# ===== シートへ書いた文字の読み戻し（仕様書 6-2: GAS の setValues と同じく、数に見える文字は数） =====
+
+_NUMBER_LIKE = re.compile(r"^[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)\Z")
+
+
+def sheet_readback(text: Any) -> tuple[str, str]:
+    """シートへ書いた文字が、読み直したときにどうなるか。(DB に入れる文字, cell_kinds の型)。
+
+    `^[+-]?(\\d+\\.?\\d*|\\.\\d+)$` に合う文字は数のセルになる: (String(Number(文字)), 'number')。
+    例 '0042' → ('42', 'number')、'1.50' → ('1.5', 'number')。ほかは (文字, 'string')。
+    """
+    s = js_string(text)
+    if _NUMBER_LIKE.match(s):
+        return js_string(float(s)), "number"
+    return s, "string"
+
+
+# ===== localeCompare（仕様書 8-10） =====
+# collate_default(a, b) = a.localeCompare(b)（言語の指定なし＝ICU の既定の照合。en_US とみなす）
+# collate_ja(a, b)      = a.localeCompare(b, 'ja')
+# 戻り値は -1・0・1。並べ替えは functools.cmp_to_key(collate_default) で使う。
+# PyICU があればそれを使う。無い環境では近い並び（_fallback_key）で代える（記号 < 数字 < ラテン文字（大小を区別しない、
+# 同じなら小文字が先）< ほかの文字 < かな（ひらがなとカタカナは同じ、同じならひらがなが先）< 漢字（符号順））。
+
+
+def _icu_collator(locale: str):
+    try:
+        import icu  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    return icu.Collator.createInstance(icu.Locale(locale))
+
+
+_COLLATORS: dict[str, Any] = {}
+
+
+def _collator(locale: str):
+    if locale not in _COLLATORS:
+        _COLLATORS[locale] = _icu_collator(locale)
+    return _COLLATORS[locale]
+
+
+def _char_class(ch: str) -> tuple[int, int, int]:
+    """(種類, 1 次の値, 3 次の値) を返す（PyICU が無いときの近い並び）。"""
+    cp = ord(ch)
+    if ch.isspace():
+        return 0, cp, 0
+    if "0" <= ch <= "9":
+        return 2, cp, 0
+    if ch.isascii() and ch.isalpha():
+        return 3, ord(ch.lower()), 0 if ch.islower() else 1
+    if 0x3041 <= cp <= 0x3096 or 0x30A1 <= cp <= 0x30F6:  # ひらがな・カタカナ
+        hira = cp - 0x60 if cp >= 0x30A1 else cp
+        base = unicodedata.normalize("NFD", chr(hira))[0]  # 濁点を外した字（1 次は同じ、2 次で分ける）
+        return 5, ord(base), (0 if cp < 0x30A1 else 1)
+    if 0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or 0xF900 <= cp <= 0xFAFF:
+        return 6, cp, 0
+    category = unicodedata.category(ch)
+    if category[0] in ("P", "S"):
+        return 1, cp, 0
+    return 4, cp, 0
+
+
+def _fallback_key(text: str) -> tuple:
+    normalized = unicodedata.normalize("NFKC", text)
+    classes = [_char_class(ch) for ch in normalized]
+    primary = tuple((c[0], c[1]) for c in classes)
+    secondary = tuple(ord(ch) for ch in normalized)
+    tertiary = tuple(c[2] for c in classes)
+    return primary, tertiary, secondary, js_sort_key(text)
+
+
+def _compare(locale: str, a: Any, b: Any) -> int:
+    sa, sb = js_string(a), js_string(b)
+    collator = _collator(locale)
+    if collator is not None:
+        result = collator.compare(sa, sb)
+        return (result > 0) - (result < 0)
+    ka, kb = _fallback_key(sa), _fallback_key(sb)
+    return (ka > kb) - (ka < kb)
+
+
+def collate_default(a: Any, b: Any) -> int:
+    """a.localeCompare(b)（言語の指定なし）。-1・0・1。"""
+    return _compare("en_US", a, b)
+
+
+def collate_ja(a: Any, b: Any) -> int:
+    """a.localeCompare(b, 'ja')。-1・0・1。"""
+    return _compare("ja", a, b)
