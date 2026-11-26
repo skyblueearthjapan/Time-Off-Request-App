@@ -137,3 +137,10 @@
 | 「【ステージング】休暇届台帳（消してよい）」 | `1FpeButODbprm7Bri2WQWlDgwzYDwiwLb8FvWu1XO2YM` | 台帳の複製（`STAGING_LEDGER_SPREADSHEET_ID`） |
 
 写しの GAS（複製に付いたスクリプト）の scriptId とデプロイは、G 担当のコードを入れるときに控える。
+
+## 7. スパイク S-1 の結果（2026-11-26 11:30 ごろ。確認済み）
+
+- ステージングの GAS: scriptId `1T3bWvTY3bv8R3UeWolurVSRtq1-20NESypGegxh-iP7PPo5xcJqzXyA3`（ステージングの DB に Apps Script API で付けたスクリプト。コードはブランチ `gas-cutover` の `src/`。手元の写しは `D:\projects\kyuka-todoke-app\staging-gas`）。Web アプリのデプロイ `AKfycbz6KZ0tAP6wpDaC-2TZMsiQ_Q7UlnDbBmISOaUwF8KkEOt457euvSuFElbO_aMsZR71tQ` @1（`access: DOMAIN` のまま）。
+- **第 1 案で通る: `GAS_INTERNAL_AUTH=bearer`**。委任のアクセストークンを `Authorization: Bearer` に付けて `/exec` へ POST → 302 → `script.googleusercontent.com` で 200 の JSON（`internal.ping` が `ok:true`、scriptId・シート・PDF フォルダ・台帳がステージングの値、`auth: bearer`、2〜5 秒）。トークンを付けないと 401 の HTML。本文の token が違うと `unauthorized`。マニフェストを匿名に変える第 2 案は使わない。
+- ping の `spreadsheetTimeZone` は空（シートが GMT のため。罠 68 のとおり）。時間帯は Sheets API の値（`Etc/GMT`）を正とする。
+- 注意: `clasp create --parentId` は指定を無視して新しい空のスプレッドシートを作った（すぐゴミ箱へ）。既にあるシートにスクリプトを付けるときは Apps Script API の `projects.create`（`parentId`）を使う。
